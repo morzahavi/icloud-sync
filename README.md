@@ -27,7 +27,7 @@ The script logs to:
 $HOME/.local/share/icloud-sync/logs/demo-sync.log
 ```
 
-It uses a lock directory at `/tmp/icloud-sync-demo.lock` so two sync runs do not overlap.
+Each run is written as a separated block, with the newest run at the top of the file. The script uses a lock directory at `/tmp/icloud-sync-demo.lock` so two sync runs do not overlap.
 
 Install the LaunchAgent template:
 

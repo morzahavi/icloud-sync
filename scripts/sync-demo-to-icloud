@@ -12,8 +12,33 @@ LOCK_DIR="/tmp/icloud-sync-demo.lock"
 
 mkdir -p "$DST" "$LOG_DIR"
 
+prepend_log_block() {
+  local block_file="$1"
+  local new_log
+
+  new_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-log.XXXXXX")"
+
+  cat "$block_file" > "$new_log"
+  if [[ -s "$LOG_FILE" ]]; then
+    printf '\n' >> "$new_log"
+    cat "$LOG_FILE" >> "$new_log"
+  fi
+
+  mv "$new_log" "$LOG_FILE"
+}
+
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  echo "$(date -Iseconds) previous sync still running" >> "$LOG_FILE"
+  lock_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
+  {
+    echo "================================================================================"
+    echo "run: skipped"
+    echo "time: $(date -Iseconds)"
+    echo "reason: previous sync still running"
+    echo "lock: $LOCK_DIR"
+    echo "================================================================================"
+  } > "$lock_log"
+  prepend_log_block "$lock_log"
+  rm -f "$lock_log"
   exit 0
 fi
 
@@ -22,8 +47,28 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "$(date -Iseconds) starting sync: $SRC -> $DST" >> "$LOG_FILE"
+run_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
 
-rsync -av "$SRC" "$DST" >> "$LOG_FILE" 2>&1
+set +e
+{
+  echo "================================================================================"
+  echo "run: sync"
+  echo "started: $(date -Iseconds)"
+  echo "source: $SRC"
+  echo "destination: $DST"
+  echo "delete: disabled"
+  echo "lock: $LOCK_DIR"
+  echo "--------------------------------------------------------------------------------"
+  rsync -av "$SRC" "$DST"
+  rsync_status=$?
+  echo "--------------------------------------------------------------------------------"
+  echo "finished: $(date -Iseconds)"
+  echo "result: $([[ "$rsync_status" -eq 0 ]] && echo success || echo "failed with exit code $rsync_status")"
+  echo "================================================================================"
+} > "$run_log" 2>&1
+set -e
 
-echo "$(date -Iseconds) finished sync" >> "$LOG_FILE"
+prepend_log_block "$run_log"
+rm -f "$run_log"
+
+exit "$rsync_status"
