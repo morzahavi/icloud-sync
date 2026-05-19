@@ -1,0 +1,26 @@
+# icloud-sync safety-first demo configuration.
+# This file is zsh syntax. Edit values after the installer copies it to:
+# $HOME/.config/icloud-sync/demo.conf
+
+SYNC_ICLOUD_ROOT="$HOME/icloud"
+
+SYNC_DELETE_DESTINATION=false
+SYNC_INTERVAL_SECONDS=600
+SYNC_STALE_AFTER_SECONDS=7200
+
+SYNC_SKIP_ON_LOW_BATTERY=true
+SYNC_MIN_BATTERY_PERCENT=30
+SYNC_MAX_RUN_SECONDS=60
+
+SYNC_MIN_FREE_LOCAL_MB=2048
+SYNC_MIN_FREE_ICLOUD_MB=2048
+
+SYNC_ALERT_MODE=notification
+SYNC_ALERT_COOLDOWN_SECONDS=3600
+
+SYNC_LOG_DIR="$HOME/.local/share/icloud-sync/logs"
+SYNC_STATE_DIR="$HOME/.local/share/icloud-sync/state"
+SYNC_MAX_LOG_BYTES=1048576
+SYNC_MAX_ROTATED_LOGS=3
+
+SYNC_LOCK_DIR="/tmp/icloud-sync-demo.lock"
