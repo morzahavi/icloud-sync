@@ -1,0 +1,94 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+STATE_DIR="$HOME/.local/share/icloud-sync/state"
+LOG_DIR="$HOME/.local/share/icloud-sync/logs"
+LAST_RUN_FILE="$STATE_DIR/demo-sync.last-run"
+LAST_ALERT_FILE="$STATE_DIR/demo-sync.last-alert"
+HEALTH_LOG="$LOG_DIR/demo-sync-health.log"
+MAX_AGE_SECONDS=$((2 * 60 * 60))
+ALERT_COOLDOWN_SECONDS=$((60 * 60))
+MAX_LOG_BYTES=$((1024 * 1024))
+MAX_ROTATED_LOGS=3
+
+mkdir -p "$STATE_DIR" "$LOG_DIR"
+
+log_size_bytes() {
+  wc -c < "$HEALTH_LOG" | tr -d '[:space:]'
+}
+
+rotate_health_log_if_needed() {
+  local index
+
+  if [[ ! -f "$HEALTH_LOG" ]]; then
+    return
+  fi
+
+  if (( $(log_size_bytes) <= MAX_LOG_BYTES )); then
+    return
+  fi
+
+  rm -f "$HEALTH_LOG.$MAX_ROTATED_LOGS"
+  for (( index = MAX_ROTATED_LOGS - 1; index >= 1; index-- )); do
+    if [[ -f "$HEALTH_LOG.$index" ]]; then
+      mv "$HEALTH_LOG.$index" "$HEALTH_LOG.$((index + 1))"
+    fi
+  done
+
+  mv "$HEALTH_LOG" "$HEALTH_LOG.1"
+}
+
+log_health() {
+  rotate_health_log_if_needed
+  echo "$(date -Iseconds) $1" >> "$HEALTH_LOG"
+}
+
+file_age_seconds() {
+  local file_path="$1"
+  echo $(( $(date +%s) - $(stat -f %m "$file_path") ))
+}
+
+send_notification() {
+  local message="$1"
+
+  if [[ "${ICLOUD_SYNC_NOTIFY_DRY_RUN:-0}" == "1" ]]; then
+    log_health "notification dry-run: $message"
+    return
+  fi
+
+  osascript -e "display notification \"$message\" with title \"iCloud Sync Demo\""
+}
+
+should_alert_now() {
+  if [[ ! -f "$LAST_ALERT_FILE" ]]; then
+    return 0
+  fi
+
+  (( $(file_age_seconds "$LAST_ALERT_FILE") >= ALERT_COOLDOWN_SECONDS ))
+}
+
+if [[ ! -f "$LAST_RUN_FILE" ]]; then
+  if should_alert_now; then
+    send_notification "Demo sync has never run."
+    date -Iseconds > "$LAST_ALERT_FILE"
+  fi
+  log_health "missing last-run stamp"
+  exit 1
+fi
+
+last_run_age="$(file_age_seconds "$LAST_RUN_FILE")"
+
+if (( last_run_age > MAX_AGE_SECONDS )); then
+  last_run_minutes=$((last_run_age / 60))
+  if should_alert_now; then
+    send_notification "Demo sync has not run for $last_run_minutes minutes."
+    date -Iseconds > "$LAST_ALERT_FILE"
+  fi
+  log_health "stale last-run stamp: age_seconds=$last_run_age"
+  exit 1
+fi
+
+log_health "ok: last_run_age_seconds=$last_run_age"

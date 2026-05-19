@@ -8,11 +8,14 @@ SRC="$HOME/projects/demo/"
 DST="$HOME/icloud/projects/demo/"
 LOG_DIR="$HOME/.local/share/icloud-sync/logs"
 LOG_FILE="$LOG_DIR/demo-sync.log"
+STATE_DIR="$HOME/.local/share/icloud-sync/state"
+LAST_RUN_FILE="$STATE_DIR/demo-sync.last-run"
 LOCK_DIR="/tmp/icloud-sync-demo.lock"
 MAX_LOG_BYTES=$((1024 * 1024))
 MAX_ROTATED_LOGS=3
 
-mkdir -p "$DST" "$LOG_DIR"
+mkdir -p "$DST" "$LOG_DIR" "$STATE_DIR"
+date -Iseconds > "$LAST_RUN_FILE"
 
 log_size_bytes() {
   wc -c < "$LOG_FILE" | tr -d '[:space:]'
