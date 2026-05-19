@@ -1,0 +1,35 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+SYNC_LABEL="dev.icloud-sync.demo"
+HEALTH_LABEL="dev.icloud-sync.demo-health"
+
+install_agent() {
+  local label="$1"
+  local template="$REPO_ROOT/launchd/$label.plist"
+  local target="$LAUNCH_AGENTS_DIR/$label.plist"
+  local domain="gui/$(id -u)"
+
+  mkdir -p "$LAUNCH_AGENTS_DIR"
+
+  if launchctl print "$domain/$label" >/dev/null 2>&1; then
+    launchctl bootout "$domain/$label"
+  fi
+
+  sed "s#__REPO_ROOT__#$REPO_ROOT#g" "$template" > "$target"
+  plutil -lint "$target" >/dev/null
+
+  launchctl bootstrap "$domain" "$target"
+  launchctl enable "$domain/$label"
+  launchctl kickstart -k "$domain/$label"
+
+  echo "installed $label"
+}
+
+install_agent "$SYNC_LABEL"
+install_agent "$HEALTH_LABEL"
