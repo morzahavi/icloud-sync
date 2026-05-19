@@ -9,12 +9,41 @@ DST="$HOME/icloud/projects/demo/"
 LOG_DIR="$HOME/.local/share/icloud-sync/logs"
 LOG_FILE="$LOG_DIR/demo-sync.log"
 LOCK_DIR="/tmp/icloud-sync-demo.lock"
+MAX_LOG_BYTES=$((1024 * 1024))
+MAX_ROTATED_LOGS=3
 
 mkdir -p "$DST" "$LOG_DIR"
+
+log_size_bytes() {
+  wc -c < "$LOG_FILE" | tr -d '[:space:]'
+}
+
+rotate_log_if_needed() {
+  local index
+
+  if [[ ! -f "$LOG_FILE" ]]; then
+    return
+  fi
+
+  if (( $(log_size_bytes) <= MAX_LOG_BYTES )); then
+    return
+  fi
+
+  rm -f "$LOG_FILE.$MAX_ROTATED_LOGS"
+  for (( index = MAX_ROTATED_LOGS - 1; index >= 1; index-- )); do
+    if [[ -f "$LOG_FILE.$index" ]]; then
+      mv "$LOG_FILE.$index" "$LOG_FILE.$((index + 1))"
+    fi
+  done
+
+  mv "$LOG_FILE" "$LOG_FILE.1"
+}
 
 prepend_log_block() {
   local block_file="$1"
   local new_log
+
+  rotate_log_if_needed
 
   new_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-log.XXXXXX")"
 

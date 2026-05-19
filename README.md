@@ -27,7 +27,7 @@ The script logs to:
 $HOME/.local/share/icloud-sync/logs/demo-sync.log
 ```
 
-Each run is written as a separated block, with the newest run at the top of the file. The script uses a lock directory at `/tmp/icloud-sync-demo.lock` so two sync runs do not overlap.
+Each run is written as a separated block, with the newest run at the top of the file. When the current log grows beyond 1 MB, it rotates to `demo-sync.log.1`; the script keeps three rotated logs. The script uses a lock directory at `/tmp/icloud-sync-demo.lock` so two sync runs do not overlap.
 
 Install the LaunchAgent template:
 
