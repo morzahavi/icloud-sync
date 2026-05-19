@@ -1,0 +1,29 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+SRC="$HOME/projects/demo/"
+DST="$HOME/icloud/projects/demo/"
+LOG_DIR="$HOME/.local/share/icloud-sync/logs"
+LOG_FILE="$LOG_DIR/demo-sync.log"
+LOCK_DIR="/tmp/icloud-sync-demo.lock"
+
+mkdir -p "$DST" "$LOG_DIR"
+
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "$(date -Iseconds) previous sync still running" >> "$LOG_FILE"
+  exit 0
+fi
+
+cleanup() {
+  rmdir "$LOCK_DIR"
+}
+trap cleanup EXIT
+
+echo "$(date -Iseconds) starting sync: $SRC -> $DST" >> "$LOG_FILE"
+
+rsync -av "$SRC" "$DST" >> "$LOG_FILE" 2>&1
+
+echo "$(date -Iseconds) finished sync" >> "$LOG_FILE"
