@@ -29,6 +29,13 @@ $HOME/.local/share/icloud-sync/logs/demo-sync.log
 
 Each run is written as a separated block, with the newest run at the top of the file. When the current log grows beyond 1 MB, it rotates to `demo-sync.log.1`; the script keeps three rotated logs. The script uses a lock directory at `/tmp/icloud-sync-demo.lock` so two sync runs do not overlap.
 
+Battery and cost guards:
+
+- If running on battery and battery is below 30%, the sync is skipped.
+- If a successful sync takes more than 60 seconds, the script sends an alert.
+- Override thresholds per run with `ICLOUD_SYNC_MIN_BATTERY_PERCENT` and `ICLOUD_SYNC_MAX_RUN_SECONDS`.
+- Set `ICLOUD_SYNC_ALERT_MODE=dialog` for a persistent popup that requires pressing OK; the default is a normal macOS notification banner.
+
 The script also updates this heartbeat file on every invocation:
 
 ```text
