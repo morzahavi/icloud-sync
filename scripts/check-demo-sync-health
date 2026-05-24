@@ -86,6 +86,11 @@ should_alert_now() {
   (( $(file_age_seconds "$LAST_ALERT_FILE") >= ALERT_COOLDOWN_SECONDS ))
 }
 
+if ! has_sync_sources; then
+  log_health "skipped: no sync sources configured"
+  exit 0
+fi
+
 if [[ ! -f "$LAST_RUN_FILE" ]]; then
   if should_alert_now; then
     send_notification "Demo sync has never completed successfully."

@@ -24,7 +24,6 @@ SYNC_STATE_DIR="$HOME/.local/share/icloud-sync/state"
 SYNC_MAX_LOG_BYTES=1048576
 SYNC_MAX_ROTATED_LOGS=3
 SYNC_LOCK_DIR="/tmp/icloud-sync-demo.lock"
-SYNC_DEFAULT_SOURCE_DIR="$HOME/projects/demo/"
 
 if [[ -f "$CONFIG_FILE" ]]; then
   source "$CONFIG_FILE"
@@ -101,10 +100,7 @@ destination_for_source() {
 iter_sync_sources() {
   local line
 
-  if [[ ! -f "$SYNC_PAIRS_FILE" ]]; then
-    normalize_dir "$SYNC_DEFAULT_SOURCE_DIR"
-    return 0
-  fi
+  [[ ! -f "$SYNC_PAIRS_FILE" ]] && return 0
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%%#*}"
@@ -113,4 +109,14 @@ iter_sync_sources() {
     [[ -z "$line" ]] && continue
     normalize_dir "$line"
   done < "$SYNC_PAIRS_FILE"
+}
+
+has_sync_sources() {
+  local source_dir
+
+  while IFS= read -r source_dir; do
+    return 0
+  done < <(iter_sync_sources)
+
+  return 1
 }
