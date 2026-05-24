@@ -142,6 +142,21 @@ if ! require_min_free_space "$SYNC_ICLOUD_ROOT" "$SYNC_MIN_FREE_ICLOUD_MB" "iClo
   exit 0
 fi
 
+if ! has_sync_sources; then
+  no_sources_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
+  {
+    echo "================================================================================"
+    echo "run: skipped"
+    echo "time: $(date -Iseconds)"
+    echo "reason: no sync sources configured"
+    echo "sync_pairs: $SYNC_PAIRS_FILE"
+    echo "================================================================================"
+  } > "$no_sources_log"
+  prepend_log_block "$no_sources_log"
+  rm -f "$no_sources_log"
+  exit 0
+fi
+
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   lock_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
   {

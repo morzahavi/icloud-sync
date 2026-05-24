@@ -33,11 +33,11 @@ $HOME/.config/icloud-sync/demo.conf
 $HOME/.config/icloud-sync/sync-pairs.conf
 ```
 
-`sync-pairs.conf` contains one local source folder per line:
+`sync-pairs.conf` contains one local source folder per line. The installed example is commented out, so no folders are synced until you add or uncomment a source:
 
 ```text
-~/projects/demo/
-~/projects/another-folder/
+# ~/projects/demo/
+# ~/projects/another-folder/
 ```
 
 Destinations are derived automatically under iCloud:

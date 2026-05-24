@@ -38,13 +38,19 @@ echo "sync log: $LOG_DIR/demo-sync.log"
 echo "health log: $LOG_DIR/demo-sync-health.log"
 echo "mappings:"
 
+has_mappings=false
 while IFS= read -r source_dir; do
+  has_mappings=true
   if reject_source_path "$source_dir" >/dev/null 2>&1; then
     echo "  $source_dir -> $(destination_for_source "$source_dir")"
   else
     echo "  rejected: $source_dir"
   fi
 done < <(iter_sync_sources)
+
+if [[ "$has_mappings" == "false" ]]; then
+  echo "  none configured"
+fi
 
 if [[ -f "$LAST_RUN_FILE" ]]; then
   echo "last successful sync: $(cat "$LAST_RUN_FILE")"

@@ -2,9 +2,10 @@
 # Destination is computed as:
 #   $SYNC_ICLOUD_ROOT/<path relative to $HOME>
 #
-# Example:
+# Example, uncomment or replace after install:
 #   ~/projects/demo/
-# maps to:
+#
+# The example above maps to:
 #   ~/icloud/projects/demo/
 
-~/projects/demo/
+# ~/projects/demo/
