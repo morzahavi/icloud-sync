@@ -35,7 +35,7 @@ expand_path() {
   if [[ "$value" == "~" ]]; then
     echo "$HOME"
   elif [[ "$value" == "~/"* ]]; then
-    echo "$HOME/${value#~/}"
+    echo "$HOME/${value#\~/}"
   else
     echo "$value"
   fi
