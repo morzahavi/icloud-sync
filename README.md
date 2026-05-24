@@ -20,21 +20,21 @@ cd icloud-sync
 Install the user config files and LaunchAgents:
 
 ```zsh
-./scripts/install-demo-launchagents
+./scripts/install-launchagents
 ```
 
 The installer creates these files if they do not already exist:
 
 ```text
-$HOME/.config/icloud-sync/demo.conf
+$HOME/.config/icloud-sync/icloud-sync.conf
 $HOME/.config/icloud-sync/sync-pairs.conf
 ```
 
 It also installs and starts these LaunchAgents:
 
 ```text
-dev.icloud-sync.demo
-dev.icloud-sync.demo-health
+dev.icloud-sync
+dev.icloud-sync.health
 ```
 
 The installer does not overwrite existing config. It cancels installation if local or iCloud target storage is below the configured free-space thresholds.
@@ -66,7 +66,7 @@ The installed example file is commented out, so no folders are synced until you 
 Edit general settings in:
 
 ```zsh
-$EDITOR "$HOME/.config/icloud-sync/demo.conf"
+$EDITOR "$HOME/.config/icloud-sync/icloud-sync.conf"
 ```
 
 Common settings:
@@ -91,13 +91,13 @@ dialog
 After configuring at least one source folder, run:
 
 ```zsh
-./scripts/sync-demo-to-icloud
+./scripts/sync-to-icloud
 ```
 
 Check the current configuration, mappings, last successful sync, and LaunchAgent state:
 
 ```zsh
-./scripts/status-demo-sync
+./scripts/status-sync
 ```
 
 If no sources are configured, sync and health checks skip cleanly and status reports:
@@ -115,7 +115,7 @@ The health LaunchAgent also runs every 10 minutes and alerts if the last success
 Uninstall both LaunchAgents:
 
 ```zsh
-./scripts/uninstall-demo-launchagents
+./scripts/uninstall-launchagents
 ```
 
 Uninstalling removes the LaunchAgent plist files. It does not remove your config, logs, state files, source folders, or iCloud destination folders.
@@ -125,19 +125,19 @@ Uninstalling removes the LaunchAgent plist files. It does not remove your config
 Sync log:
 
 ```text
-$HOME/.local/share/icloud-sync/logs/demo-sync.log
+$HOME/.local/share/icloud-sync/logs/sync.log
 ```
 
 Health-check log:
 
 ```text
-$HOME/.local/share/icloud-sync/logs/demo-sync-health.log
+$HOME/.local/share/icloud-sync/logs/sync-health.log
 ```
 
 Successful-sync heartbeat:
 
 ```text
-$HOME/.local/share/icloud-sync/state/demo-sync.last-run
+$HOME/.local/share/icloud-sync/state/sync.last-run
 ```
 
 Each sync run is written as a separated block, with the newest run at the top of the file. Logs rotate at 1 MB and keep three rotated files.
@@ -160,7 +160,7 @@ To test with disposable data, create a local folder and add it to `sync-pairs.co
 mkdir -p "$HOME/projects/icloud-sync-test"
 printf 'hello\n' > "$HOME/projects/icloud-sync-test/example.txt"
 printf '%s\n' "$HOME/projects/icloud-sync-test/" >> "$HOME/.config/icloud-sync/sync-pairs.conf"
-./scripts/sync-demo-to-icloud
+./scripts/sync-to-icloud
 ```
 
 Then inspect:

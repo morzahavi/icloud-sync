@@ -8,9 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/icloud-sync-config"
 
 LOG_DIR="$SYNC_LOG_DIR"
-LOG_FILE="$LOG_DIR/demo-sync.log"
+LOG_FILE="$LOG_DIR/sync.log"
 STATE_DIR="$SYNC_STATE_DIR"
-LAST_RUN_FILE="$STATE_DIR/demo-sync.last-run"
+LAST_RUN_FILE="$STATE_DIR/sync.last-run"
 LOCK_DIR="$SYNC_LOCK_DIR"
 MAX_LOG_BYTES="$SYNC_MAX_LOG_BYTES"
 MAX_ROTATED_LOGS="$SYNC_MAX_ROTATED_LOGS"
@@ -51,7 +51,7 @@ prepend_log_block() {
 
   rotate_log_if_needed
 
-  new_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-log.XXXXXX")"
+  new_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-log.XXXXXX")"
 
   cat "$block_file" > "$new_log"
   if [[ -s "$LOG_FILE" ]]; then
@@ -81,13 +81,13 @@ send_alert() {
   if [[ "$ALERT_MODE" == "dialog" ]]; then
     osascript - "$message" <<'APPLESCRIPT'
 on run argv
-  display dialog (item 1 of argv) buttons {"OK"} default button "OK" with title "iCloud Sync Demo" with icon caution
+  display dialog (item 1 of argv) buttons {"OK"} default button "OK" with title "iCloud Sync" with icon caution
 end run
 APPLESCRIPT
   else
     osascript - "$message" <<'APPLESCRIPT'
 on run argv
-  display notification (item 1 of argv) with title "iCloud Sync Demo"
+  display notification (item 1 of argv) with title "iCloud Sync"
 end run
 APPLESCRIPT
   fi
@@ -96,7 +96,7 @@ APPLESCRIPT
 if is_true "$SYNC_SKIP_ON_LOW_BATTERY" && [[ "$(power_source)" == "Battery Power" ]]; then
   current_battery_percent="$(battery_percent)"
   if [[ -n "$current_battery_percent" ]] && (( current_battery_percent < MIN_BATTERY_PERCENT )); then
-    battery_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
+    battery_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
     {
       echo "================================================================================"
       echo "run: skipped"
@@ -113,7 +113,7 @@ if is_true "$SYNC_SKIP_ON_LOW_BATTERY" && [[ "$(power_source)" == "Battery Power
 fi
 
 if ! require_min_free_space "$HOME" "$SYNC_MIN_FREE_LOCAL_MB" "local storage"; then
-  storage_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
+  storage_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
   {
     echo "================================================================================"
     echo "run: skipped"
@@ -128,7 +128,7 @@ if ! require_min_free_space "$HOME" "$SYNC_MIN_FREE_LOCAL_MB" "local storage"; t
 fi
 
 if ! require_min_free_space "$SYNC_ICLOUD_ROOT" "$SYNC_MIN_FREE_ICLOUD_MB" "iCloud target storage"; then
-  storage_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
+  storage_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
   {
     echo "================================================================================"
     echo "run: skipped"
@@ -143,7 +143,7 @@ if ! require_min_free_space "$SYNC_ICLOUD_ROOT" "$SYNC_MIN_FREE_ICLOUD_MB" "iClo
 fi
 
 if ! has_sync_sources; then
-  no_sources_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
+  no_sources_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
   {
     echo "================================================================================"
     echo "run: skipped"
@@ -158,7 +158,7 @@ if ! has_sync_sources; then
 fi
 
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  lock_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
+  lock_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
   {
     echo "================================================================================"
     echo "run: skipped"
@@ -177,7 +177,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-run_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
+run_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
 run_started_epoch="$(date +%s)"
 
 set +e
@@ -238,7 +238,7 @@ if (( rsync_status == 0 )); then
 fi
 
 if (( rsync_status == 0 && run_duration_seconds > MAX_RUN_SECONDS )); then
-  send_alert "Demo sync took ${run_duration_seconds}s, above ${MAX_RUN_SECONDS}s."
+  send_alert "iCloud sync took ${run_duration_seconds}s, above ${MAX_RUN_SECONDS}s."
 fi
 
 exit "$rsync_status"

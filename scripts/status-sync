@@ -7,12 +7,12 @@ set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/icloud-sync-config"
 
-SYNC_LABEL="dev.icloud-sync.demo"
-HEALTH_LABEL="dev.icloud-sync.demo-health"
+SYNC_LABEL="dev.icloud-sync"
+HEALTH_LABEL="dev.icloud-sync.health"
 DOMAIN="gui/$(id -u)"
 STATE_DIR="$SYNC_STATE_DIR"
 LOG_DIR="$SYNC_LOG_DIR"
-LAST_RUN_FILE="$STATE_DIR/demo-sync.last-run"
+LAST_RUN_FILE="$STATE_DIR/sync.last-run"
 
 print_agent_status() {
   local label="$1"
@@ -34,8 +34,8 @@ echo "local free MB: $(free_mb_for_path "$HOME")"
 echo "required local free MB: $SYNC_MIN_FREE_LOCAL_MB"
 echo "iCloud target free MB: $(free_mb_for_path "$SYNC_ICLOUD_ROOT")"
 echo "required iCloud free MB: $SYNC_MIN_FREE_ICLOUD_MB"
-echo "sync log: $LOG_DIR/demo-sync.log"
-echo "health log: $LOG_DIR/demo-sync-health.log"
+echo "sync log: $LOG_DIR/sync.log"
+echo "health log: $LOG_DIR/sync-health.log"
 echo "mappings:"
 
 has_mappings=false
