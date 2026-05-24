@@ -1,21 +1,14 @@
-icloud-sync contains scripts and notes for reproducible local-to-iCloud sync and machine recovery.
+icloud-sync is a safety-first macOS tool for one-way local-to-iCloud folder sync.
 
-## Minimal Demo
-
-This macOS demo mirrors a local source folder to an iCloud destination without deleting destination-only files.
-
-```text
-source      = $HOME/projects/demo/
-destination = $HOME/icloud/projects/demo/
-```
+It mirrors configured local folders into iCloud Drive with `rsync`, does not delete destination-only files by default, and can run on a recurring LaunchAgent schedule.
 
 ## Requirements
 
 - macOS with iCloud Drive enabled.
-- The `$HOME/icloud` path should point to iCloud Drive.
-- `rsync`, `zsh`, `launchctl`, `pmset`, and `osascript` should be available.
+- A local iCloud path at `$HOME/icloud`.
+- `rsync`, `zsh`, `launchctl`, `pmset`, and `osascript`.
 
-## Download
+## Install
 
 Clone the repo and enter it:
 
@@ -24,65 +17,100 @@ git clone https://github.com/morzahavi/icloud-sync.git
 cd icloud-sync
 ```
 
-## Try It Manually
+Install the user config files and LaunchAgents:
 
-The scripts use safety-first defaults even before install. After install, edit:
+```zsh
+./scripts/install-demo-launchagents
+```
+
+The installer creates these files if they do not already exist:
 
 ```text
 $HOME/.config/icloud-sync/demo.conf
 $HOME/.config/icloud-sync/sync-pairs.conf
 ```
 
-`sync-pairs.conf` contains one local source folder per line. The installed example is commented out, so no folders are synced until you add or uncomment a source:
-
-```text
-# ~/projects/demo/
-# ~/projects/another-folder/
-```
-
-Destinations are derived automatically under iCloud:
-
-```text
-~/projects/demo/           -> ~/icloud/projects/demo/
-~/projects/another-folder/ -> ~/icloud/projects/another-folder/
-```
-
-Run a dry run first:
-
-```zsh
-rsync -av --dry-run "$HOME/projects/demo/" "$HOME/icloud/projects/demo/"
-```
-
-Run the sync script manually:
-
-```zsh
-./scripts/sync-demo-to-icloud
-```
-
-Check status:
-
-```zsh
-./scripts/status-demo-sync
-```
-
-## Install Automation
-
-Install both LaunchAgents:
-
-```zsh
-./scripts/install-demo-launchagents
-```
-
-This installs:
+It also installs and starts these LaunchAgents:
 
 ```text
 dev.icloud-sync.demo
 dev.icloud-sync.demo-health
 ```
 
-The sync agent runs every 10 minutes. The health agent also runs every 10 minutes and alerts if the successful-sync heartbeat is older than two hours.
+The installer does not overwrite existing config. It cancels installation if local or iCloud target storage is below the configured free-space thresholds.
 
-During install, the script creates config files if they do not exist and never overwrites existing config. It cancels installation if local or iCloud target storage is below the configured free-space thresholds.
+## Configure
+
+Edit the sync-pairs file:
+
+```zsh
+$EDITOR "$HOME/.config/icloud-sync/sync-pairs.conf"
+```
+
+Add one local source folder per line:
+
+```text
+~/projects/example-project/
+~/Documents/example-notes/
+```
+
+Destinations are derived automatically under iCloud:
+
+```text
+~/projects/example-project/ -> ~/icloud/projects/example-project/
+~/Documents/example-notes/   -> ~/icloud/Documents/example-notes/
+```
+
+The installed example file is commented out, so no folders are synced until you add or uncomment a source.
+
+Edit general settings in:
+
+```zsh
+$EDITOR "$HOME/.config/icloud-sync/demo.conf"
+```
+
+Common settings:
+
+```text
+SYNC_ICLOUD_ROOT="$HOME/icloud"
+SYNC_DELETE_DESTINATION=false
+SYNC_INTERVAL_SECONDS=600
+SYNC_STALE_AFTER_SECONDS=7200
+SYNC_ALERT_MODE=notification
+```
+
+`SYNC_ALERT_MODE` supports:
+
+```text
+notification
+dialog
+```
+
+## Run Manually
+
+After configuring at least one source folder, run:
+
+```zsh
+./scripts/sync-demo-to-icloud
+```
+
+Check the current configuration, mappings, last successful sync, and LaunchAgent state:
+
+```zsh
+./scripts/status-demo-sync
+```
+
+If no sources are configured, sync and health checks skip cleanly and status reports:
+
+```text
+none configured
+```
+
+## Automation
+
+The sync LaunchAgent runs every 10 minutes by default.
+
+The health LaunchAgent also runs every 10 minutes and alerts if the last successful sync is older than two hours.
 
 Uninstall both LaunchAgents:
 
@@ -90,39 +118,53 @@ Uninstall both LaunchAgents:
 ./scripts/uninstall-demo-launchagents
 ```
 
+Uninstalling removes the LaunchAgent plist files. It does not remove your config, logs, state files, source folders, or iCloud destination folders.
+
 ## Logs and State
 
-The sync log is:
+Sync log:
 
 ```text
 $HOME/.local/share/icloud-sync/logs/demo-sync.log
 ```
 
-The health-check log is:
+Health-check log:
 
 ```text
 $HOME/.local/share/icloud-sync/logs/demo-sync-health.log
 ```
 
-Each sync run is written as a separated block, with the newest run at the top of the file. Logs rotate at 1 MB and keep three rotated files.
-
-The sync script updates this heartbeat file after a successful sync:
+Successful-sync heartbeat:
 
 ```text
 $HOME/.local/share/icloud-sync/state/demo-sync.last-run
 ```
 
-## Battery and Alerts
+Each sync run is written as a separated block, with the newest run at the top of the file. Logs rotate at 1 MB and keep three rotated files.
 
+## Safety
+
+- Destination-only files are kept by default because `SYNC_DELETE_DESTINATION=false`.
+- Sources outside `$HOME` are rejected.
 - If running on battery and battery is below 30%, the sync is skipped.
 - If local or iCloud target storage has less than 2048 MB free, install or sync is skipped.
 - If a successful sync takes more than 60 seconds, the script sends an alert.
 - Override thresholds per run with `ICLOUD_SYNC_MIN_BATTERY_PERCENT` and `ICLOUD_SYNC_MAX_RUN_SECONDS`.
-- Alert modes are `notification` for a normal macOS notification banner or `dialog` for a persistent popup that requires pressing OK.
-- The health checker sends at most one stale-sync alert per hour while the sync remains stale.
+- Do not configure folders containing secrets unless you intend to sync them to iCloud.
 
-## Safety Notes
+## Optional Test Folder
 
-- This demo does not use `--delete`, so files that exist only in `$HOME/icloud/projects/demo/` remain untouched.
-- This demo copies files to iCloud Drive. Do not put secrets in the demo folder unless you intend to sync them to iCloud.
-- This is not a full backup system yet. It is a minimal demo of one-way local-to-iCloud sync with monitoring.
+To test with disposable data, create a local folder and add it to `sync-pairs.conf` yourself:
+
+```zsh
+mkdir -p "$HOME/projects/icloud-sync-test"
+printf 'hello\n' > "$HOME/projects/icloud-sync-test/example.txt"
+printf '%s\n' "$HOME/projects/icloud-sync-test/" >> "$HOME/.config/icloud-sync/sync-pairs.conf"
+./scripts/sync-demo-to-icloud
+```
+
+Then inspect:
+
+```text
+$HOME/icloud/projects/icloud-sync-test/
+```
