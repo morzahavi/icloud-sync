@@ -3,9 +3,9 @@
 #   $SYNC_ICLOUD_ROOT/<path relative to $HOME>
 #
 # Example, uncomment or replace after install:
-#   ~/projects/demo/
+#   ~/projects/example-project/
 #
 # The example above maps to:
-#   ~/icloud/projects/demo/
+#   ~/icloud/projects/example-project/
 
-# ~/projects/demo/
+# ~/projects/example-project/

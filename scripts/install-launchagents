@@ -8,8 +8,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$REPO_ROOT/scripts/lib/icloud-sync-config"
 
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
-SYNC_LABEL="dev.icloud-sync.demo"
-HEALTH_LABEL="dev.icloud-sync.demo-health"
+SYNC_LABEL="dev.icloud-sync"
+HEALTH_LABEL="dev.icloud-sync.health"
 
 install_config_file() {
   local source="$1"
@@ -26,7 +26,7 @@ install_config_file() {
   echo "created $target"
 }
 
-install_config_file "$REPO_ROOT/config/demo.conf.example" "$CONFIG_FILE"
+install_config_file "$REPO_ROOT/config/icloud-sync.conf.example" "$CONFIG_FILE"
 install_config_file "$REPO_ROOT/config/sync-pairs.conf.example" "$SYNC_PAIRS_FILE"
 
 if ! require_min_free_space "$HOME" "$SYNC_MIN_FREE_LOCAL_MB" "local storage"; then

@@ -5,7 +5,7 @@ set -u
 set -o pipefail
 
 CONFIG_DIR="${ICLOUD_SYNC_CONFIG_DIR:-$HOME/.config/icloud-sync}"
-CONFIG_FILE="${ICLOUD_SYNC_CONFIG_FILE:-$CONFIG_DIR/demo.conf}"
+CONFIG_FILE="${ICLOUD_SYNC_CONFIG_FILE:-$CONFIG_DIR/icloud-sync.conf}"
 SYNC_PAIRS_FILE="${ICLOUD_SYNC_PAIRS_FILE:-$CONFIG_DIR/sync-pairs.conf}"
 
 SYNC_ICLOUD_ROOT="$HOME/icloud"
@@ -23,7 +23,7 @@ SYNC_LOG_DIR="$HOME/.local/share/icloud-sync/logs"
 SYNC_STATE_DIR="$HOME/.local/share/icloud-sync/state"
 SYNC_MAX_LOG_BYTES=1048576
 SYNC_MAX_ROTATED_LOGS=3
-SYNC_LOCK_DIR="/tmp/icloud-sync-demo.lock"
+SYNC_LOCK_DIR="/tmp/icloud-sync.lock"
 
 if [[ -f "$CONFIG_FILE" ]]; then
   source "$CONFIG_FILE"

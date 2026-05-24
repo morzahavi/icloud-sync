@@ -6,8 +6,8 @@ set -o pipefail
 
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 LABELS=(
-  dev.icloud-sync.demo
-  dev.icloud-sync.demo-health
+  dev.icloud-sync
+  dev.icloud-sync.health
 )
 DOMAIN="gui/$(id -u)"
 
