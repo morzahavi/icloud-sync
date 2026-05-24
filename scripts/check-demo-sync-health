@@ -4,19 +4,16 @@ set -e
 set -u
 set -o pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/lib/icloud-sync-config"
-
-STATE_DIR="$SYNC_STATE_DIR"
-LOG_DIR="$SYNC_LOG_DIR"
+STATE_DIR="$HOME/.local/share/icloud-sync/state"
+LOG_DIR="$HOME/.local/share/icloud-sync/logs"
 LAST_RUN_FILE="$STATE_DIR/demo-sync.last-run"
 LAST_ALERT_FILE="$STATE_DIR/demo-sync.last-alert"
 HEALTH_LOG="$LOG_DIR/demo-sync-health.log"
-MAX_AGE_SECONDS="$SYNC_STALE_AFTER_SECONDS"
-ALERT_COOLDOWN_SECONDS="$SYNC_ALERT_COOLDOWN_SECONDS"
-MAX_LOG_BYTES="$SYNC_MAX_LOG_BYTES"
-MAX_ROTATED_LOGS="$SYNC_MAX_ROTATED_LOGS"
-ALERT_MODE="${ICLOUD_SYNC_ALERT_MODE:-$SYNC_ALERT_MODE}"
+MAX_AGE_SECONDS=$((2 * 60 * 60))
+ALERT_COOLDOWN_SECONDS=$((60 * 60))
+MAX_LOG_BYTES=$((1024 * 1024))
+MAX_ROTATED_LOGS=3
+ALERT_MODE="${ICLOUD_SYNC_ALERT_MODE:-notification}"
 
 mkdir -p "$STATE_DIR" "$LOG_DIR"
 

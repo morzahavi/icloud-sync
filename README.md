@@ -26,27 +26,6 @@ cd icloud-sync
 
 ## Try It Manually
 
-The scripts use safety-first defaults even before install. After install, edit:
-
-```text
-$HOME/.config/icloud-sync/demo.conf
-$HOME/.config/icloud-sync/sync-pairs.conf
-```
-
-`sync-pairs.conf` contains one local source folder per line:
-
-```text
-~/projects/demo/
-~/projects/another-folder/
-```
-
-Destinations are derived automatically under iCloud:
-
-```text
-~/projects/demo/           -> ~/icloud/projects/demo/
-~/projects/another-folder/ -> ~/icloud/projects/another-folder/
-```
-
 Run a dry run first:
 
 ```zsh
@@ -82,8 +61,6 @@ dev.icloud-sync.demo-health
 
 The sync agent runs every 10 minutes. The health agent also runs every 10 minutes and alerts if the sync heartbeat is older than two hours.
 
-During install, the script creates config files if they do not exist and never overwrites existing config. It cancels installation if local or iCloud target storage is below the configured free-space thresholds.
-
 Uninstall both LaunchAgents:
 
 ```zsh
@@ -115,7 +92,6 @@ $HOME/.local/share/icloud-sync/state/demo-sync.last-run
 ## Battery and Alerts
 
 - If running on battery and battery is below 30%, the sync is skipped.
-- If local or iCloud target storage has less than 2048 MB free, install or sync is skipped.
 - If a successful sync takes more than 60 seconds, the script sends an alert.
 - Override thresholds per run with `ICLOUD_SYNC_MIN_BATTERY_PERCENT` and `ICLOUD_SYNC_MAX_RUN_SECONDS`.
 - Set `ICLOUD_SYNC_ALERT_MODE=dialog` for a persistent popup that requires pressing OK; the default is a normal macOS notification banner.

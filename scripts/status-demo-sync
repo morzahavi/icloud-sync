@@ -4,14 +4,13 @@ set -e
 set -u
 set -o pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/lib/icloud-sync-config"
-
 SYNC_LABEL="dev.icloud-sync.demo"
 HEALTH_LABEL="dev.icloud-sync.demo-health"
 DOMAIN="gui/$(id -u)"
-STATE_DIR="$SYNC_STATE_DIR"
-LOG_DIR="$SYNC_LOG_DIR"
+SRC="$HOME/projects/demo/"
+DST="$HOME/icloud/projects/demo/"
+STATE_DIR="$HOME/.local/share/icloud-sync/state"
+LOG_DIR="$HOME/.local/share/icloud-sync/logs"
 LAST_RUN_FILE="$STATE_DIR/demo-sync.last-run"
 
 print_agent_status() {
@@ -24,27 +23,10 @@ print_agent_status() {
   fi
 }
 
-echo "config: $CONFIG_FILE"
-echo "sync pairs: $SYNC_PAIRS_FILE"
-echo "iCloud root: $(normalize_dir "$SYNC_ICLOUD_ROOT")"
-echo "delete destination: $SYNC_DELETE_DESTINATION"
-echo "sync interval seconds: $SYNC_INTERVAL_SECONDS"
-echo "stale after seconds: $SYNC_STALE_AFTER_SECONDS"
-echo "local free MB: $(free_mb_for_path "$HOME")"
-echo "required local free MB: $SYNC_MIN_FREE_LOCAL_MB"
-echo "iCloud target free MB: $(free_mb_for_path "$SYNC_ICLOUD_ROOT")"
-echo "required iCloud free MB: $SYNC_MIN_FREE_ICLOUD_MB"
+echo "source: $SRC"
+echo "destination: $DST"
 echo "sync log: $LOG_DIR/demo-sync.log"
 echo "health log: $LOG_DIR/demo-sync-health.log"
-echo "mappings:"
-
-while IFS= read -r source_dir; do
-  if reject_source_path "$source_dir" >/dev/null 2>&1; then
-    echo "  $source_dir -> $(destination_for_source "$source_dir")"
-  else
-    echo "  rejected: $source_dir"
-  fi
-done < <(iter_sync_sources)
 
 if [[ -f "$LAST_RUN_FILE" ]]; then
   echo "last run: $(cat "$LAST_RUN_FILE")"

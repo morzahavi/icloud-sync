@@ -4,21 +4,20 @@ set -e
 set -u
 set -o pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/lib/icloud-sync-config"
-
-LOG_DIR="$SYNC_LOG_DIR"
+SRC="$HOME/projects/demo/"
+DST="$HOME/icloud/projects/demo/"
+LOG_DIR="$HOME/.local/share/icloud-sync/logs"
 LOG_FILE="$LOG_DIR/demo-sync.log"
-STATE_DIR="$SYNC_STATE_DIR"
+STATE_DIR="$HOME/.local/share/icloud-sync/state"
 LAST_RUN_FILE="$STATE_DIR/demo-sync.last-run"
-LOCK_DIR="$SYNC_LOCK_DIR"
-MAX_LOG_BYTES="$SYNC_MAX_LOG_BYTES"
-MAX_ROTATED_LOGS="$SYNC_MAX_ROTATED_LOGS"
-MIN_BATTERY_PERCENT="${ICLOUD_SYNC_MIN_BATTERY_PERCENT:-$SYNC_MIN_BATTERY_PERCENT}"
-MAX_RUN_SECONDS="${ICLOUD_SYNC_MAX_RUN_SECONDS:-$SYNC_MAX_RUN_SECONDS}"
-ALERT_MODE="${ICLOUD_SYNC_ALERT_MODE:-$SYNC_ALERT_MODE}"
+LOCK_DIR="/tmp/icloud-sync-demo.lock"
+MAX_LOG_BYTES=$((1024 * 1024))
+MAX_ROTATED_LOGS=3
+MIN_BATTERY_PERCENT="${ICLOUD_SYNC_MIN_BATTERY_PERCENT:-30}"
+MAX_RUN_SECONDS="${ICLOUD_SYNC_MAX_RUN_SECONDS:-60}"
+ALERT_MODE="${ICLOUD_SYNC_ALERT_MODE:-notification}"
 
-mkdir -p "$LOG_DIR" "$STATE_DIR"
+mkdir -p "$DST" "$LOG_DIR" "$STATE_DIR"
 date -Iseconds > "$LAST_RUN_FILE"
 
 log_size_bytes() {
@@ -94,7 +93,7 @@ APPLESCRIPT
   fi
 }
 
-if is_true "$SYNC_SKIP_ON_LOW_BATTERY" && [[ "$(power_source)" == "Battery Power" ]]; then
+if [[ "$(power_source)" == "Battery Power" ]]; then
   current_battery_percent="$(battery_percent)"
   if [[ -n "$current_battery_percent" ]] && (( current_battery_percent < MIN_BATTERY_PERCENT )); then
     battery_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
@@ -111,36 +110,6 @@ if is_true "$SYNC_SKIP_ON_LOW_BATTERY" && [[ "$(power_source)" == "Battery Power
     rm -f "$battery_log"
     exit 0
   fi
-fi
-
-if ! require_min_free_space "$HOME" "$SYNC_MIN_FREE_LOCAL_MB" "local storage"; then
-  storage_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
-  {
-    echo "================================================================================"
-    echo "run: skipped"
-    echo "time: $(date -Iseconds)"
-    echo "reason: local storage below threshold"
-    echo "threshold_mb: $SYNC_MIN_FREE_LOCAL_MB"
-    echo "================================================================================"
-  } > "$storage_log"
-  prepend_log_block "$storage_log"
-  rm -f "$storage_log"
-  exit 0
-fi
-
-if ! require_min_free_space "$SYNC_ICLOUD_ROOT" "$SYNC_MIN_FREE_ICLOUD_MB" "iCloud target storage"; then
-  storage_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-demo-run.XXXXXX")"
-  {
-    echo "================================================================================"
-    echo "run: skipped"
-    echo "time: $(date -Iseconds)"
-    echo "reason: iCloud target storage below threshold"
-    echo "threshold_mb: $SYNC_MIN_FREE_ICLOUD_MB"
-    echo "================================================================================"
-  } > "$storage_log"
-  prepend_log_block "$storage_log"
-  rm -f "$storage_log"
-  exit 0
 fi
 
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
@@ -171,40 +140,14 @@ set +e
   echo "================================================================================"
   echo "run: sync"
   echo "started: $(date -Iseconds)"
-  echo "config: $CONFIG_FILE"
-  echo "sync_pairs: $SYNC_PAIRS_FILE"
-  echo "delete: $SYNC_DELETE_DESTINATION"
+  echo "source: $SRC"
+  echo "destination: $DST"
+  echo "delete: disabled"
   echo "lock: $LOCK_DIR"
   echo "--------------------------------------------------------------------------------"
-  rsync_status=0
-  while IFS= read -r source_dir; do
-    reject_source_path "$source_dir" || {
-      rsync_status=2
-      continue
-    }
-
-    destination_dir="$(destination_for_source "$source_dir")"
-    mkdir -p "$destination_dir"
-
-    echo "source: $source_dir"
-    echo "destination: $destination_dir"
-
-    rsync_args=(-a -v)
-    if is_true "$SYNC_DELETE_DESTINATION"; then
-      rsync_args+=(--delete)
-    fi
-
-    rsync "${rsync_args[@]}" "$source_dir" "$destination_dir"
-    pair_status=$?
-    if (( pair_status != 0 )); then
-      rsync_status="$pair_status"
-    fi
-    echo "--------------------------------------------------------------------------------"
-  done < <(iter_sync_sources)
-  iter_status=$?
-  if (( iter_status != 0 )); then
-    rsync_status="$iter_status"
-  fi
+  rsync -av "$SRC" "$DST"
+  rsync_status=$?
+  echo "--------------------------------------------------------------------------------"
   echo "finished: $(date -Iseconds)"
   run_duration_seconds=$(( $(date +%s) - run_started_epoch ))
   echo "duration_seconds: $run_duration_seconds"
