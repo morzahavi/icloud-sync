@@ -80,7 +80,7 @@ dev.icloud-sync.demo
 dev.icloud-sync.demo-health
 ```
 
-The sync agent runs every 10 minutes. The health agent also runs every 10 minutes and alerts if the sync heartbeat is older than two hours.
+The sync agent runs every 10 minutes. The health agent also runs every 10 minutes and alerts if the successful-sync heartbeat is older than two hours.
 
 During install, the script creates config files if they do not exist and never overwrites existing config. It cancels installation if local or iCloud target storage is below the configured free-space thresholds.
 
@@ -106,7 +106,7 @@ $HOME/.local/share/icloud-sync/logs/demo-sync-health.log
 
 Each sync run is written as a separated block, with the newest run at the top of the file. Logs rotate at 1 MB and keep three rotated files.
 
-The sync script updates this heartbeat file on every invocation:
+The sync script updates this heartbeat file after a successful sync:
 
 ```text
 $HOME/.local/share/icloud-sync/state/demo-sync.last-run
@@ -118,7 +118,7 @@ $HOME/.local/share/icloud-sync/state/demo-sync.last-run
 - If local or iCloud target storage has less than 2048 MB free, install or sync is skipped.
 - If a successful sync takes more than 60 seconds, the script sends an alert.
 - Override thresholds per run with `ICLOUD_SYNC_MIN_BATTERY_PERCENT` and `ICLOUD_SYNC_MAX_RUN_SECONDS`.
-- Set `ICLOUD_SYNC_ALERT_MODE=dialog` for a persistent popup that requires pressing OK; the default is a normal macOS notification banner.
+- Alert modes are `notification` for a normal macOS notification banner or `dialog` for a persistent popup that requires pressing OK.
 - The health checker sends at most one stale-sync alert per hour while the sync remains stale.
 
 ## Safety Notes

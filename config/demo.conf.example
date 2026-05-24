@@ -15,6 +15,9 @@ SYNC_MAX_RUN_SECONDS=60
 SYNC_MIN_FREE_LOCAL_MB=2048
 SYNC_MIN_FREE_ICLOUD_MB=2048
 
+# Alert modes:
+# - notification: normal macOS notification banner.
+# - dialog: persistent popup that requires pressing OK.
 SYNC_ALERT_MODE=notification
 SYNC_ALERT_COOLDOWN_SECONDS=3600
 
