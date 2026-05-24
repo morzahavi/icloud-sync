@@ -88,10 +88,10 @@ should_alert_now() {
 
 if [[ ! -f "$LAST_RUN_FILE" ]]; then
   if should_alert_now; then
-    send_notification "Demo sync has never completed successfully."
+    send_notification "Demo sync has never run."
     date -Iseconds > "$LAST_ALERT_FILE"
   fi
-  log_health "missing successful-sync stamp"
+  log_health "missing last-run stamp"
   exit 1
 fi
 
@@ -100,11 +100,11 @@ last_run_age="$(file_age_seconds "$LAST_RUN_FILE")"
 if (( last_run_age > MAX_AGE_SECONDS )); then
   last_run_minutes=$((last_run_age / 60))
   if should_alert_now; then
-    send_notification "Demo sync has not completed successfully for $last_run_minutes minutes."
+    send_notification "Demo sync has not run for $last_run_minutes minutes."
     date -Iseconds > "$LAST_ALERT_FILE"
   fi
-  log_health "stale successful-sync stamp: age_seconds=$last_run_age"
+  log_health "stale last-run stamp: age_seconds=$last_run_age"
   exit 1
 fi
 
-log_health "ok: last_success_age_seconds=$last_run_age"
+log_health "ok: last_run_age_seconds=$last_run_age"

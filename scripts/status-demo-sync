@@ -47,9 +47,9 @@ while IFS= read -r source_dir; do
 done < <(iter_sync_sources)
 
 if [[ -f "$LAST_RUN_FILE" ]]; then
-  echo "last successful sync: $(cat "$LAST_RUN_FILE")"
+  echo "last run: $(cat "$LAST_RUN_FILE")"
 else
-  echo "last successful sync: never"
+  echo "last run: never"
 fi
 
 print_agent_status "$SYNC_LABEL"
