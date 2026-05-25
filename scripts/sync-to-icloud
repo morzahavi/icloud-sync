@@ -16,7 +16,6 @@ MAX_LOG_BYTES="$SYNC_MAX_LOG_BYTES"
 MAX_ROTATED_LOGS="$SYNC_MAX_ROTATED_LOGS"
 MIN_BATTERY_PERCENT="${ICLOUD_SYNC_MIN_BATTERY_PERCENT:-$SYNC_MIN_BATTERY_PERCENT}"
 MAX_RUN_SECONDS="${ICLOUD_SYNC_MAX_RUN_SECONDS:-$SYNC_MAX_RUN_SECONDS}"
-ALERT_MODE="${ICLOUD_SYNC_ALERT_MODE:-$SYNC_ALERT_MODE}"
 
 mkdir -p "$LOG_DIR" "$STATE_DIR"
 
@@ -68,29 +67,6 @@ power_source() {
 
 battery_percent() {
   pmset -g batt | awk -F '\t' '/InternalBattery/ { split($2, fields, ";"); gsub(/[^0-9]/, "", fields[1]); print fields[1]; exit }'
-}
-
-send_alert() {
-  local message="$1"
-
-  if [[ "${ICLOUD_SYNC_NOTIFY_DRY_RUN:-0}" == "1" ]]; then
-    echo "$(date -Iseconds) alert dry-run: $message" >> "$LOG_FILE"
-    return
-  fi
-
-  if [[ "$ALERT_MODE" == "dialog" ]]; then
-    osascript - "$message" <<'APPLESCRIPT'
-on run argv
-  display dialog (item 1 of argv) buttons {"OK"} default button "OK" with title "iCloud Sync" with icon caution
-end run
-APPLESCRIPT
-  else
-    osascript - "$message" <<'APPLESCRIPT'
-on run argv
-  display notification (item 1 of argv) with title "iCloud Sync"
-end run
-APPLESCRIPT
-  fi
 }
 
 if is_true "$SYNC_SKIP_ON_LOW_BATTERY" && [[ "$(power_source)" == "Battery Power" ]]; then
@@ -199,11 +175,18 @@ set +e
 
     destination_dir="$(destination_for_source "$source_dir")"
     mkdir -p "$destination_dir"
+    ensure_filter_file_for_source "$source_dir" || {
+      rsync_status=2
+      continue
+    }
+    filter_file="$(filter_file_for_source "$source_dir")"
 
     echo "source: $source_dir"
     echo "destination: $destination_dir"
+    echo "filter_file: $filter_file"
 
     rsync_args=(-a -v)
+    rsync_args+=(--filter="merge $filter_file")
     if is_true "$SYNC_DELETE_DESTINATION"; then
       rsync_args+=(--delete)
     fi
@@ -235,10 +218,6 @@ rm -f "$run_log"
 
 if (( rsync_status == 0 )); then
   date -Iseconds > "$LAST_RUN_FILE"
-fi
-
-if (( rsync_status == 0 && run_duration_seconds > MAX_RUN_SECONDS )); then
-  send_alert "iCloud sync took ${run_duration_seconds}s, above ${MAX_RUN_SECONDS}s."
 fi
 
 exit "$rsync_status"

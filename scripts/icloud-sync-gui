@@ -1,0 +1,470 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/lib/icloud-sync-config"
+
+DASHBOARD_DIR="$SYNC_STATE_DIR/gui"
+DASHBOARD_FILE="$DASHBOARD_DIR/status.html"
+SYNC_LOG="$SYNC_LOG_DIR/sync.log"
+HEALTH_LOG="$SYNC_LOG_DIR/sync-health.log"
+
+mkdir -p "$DASHBOARD_DIR"
+
+html_escape() {
+  sed \
+    -e 's/&/\&amp;/g' \
+    -e 's/</\&lt;/g' \
+    -e 's/>/\&gt;/g'
+}
+
+file_tail() {
+  local file_path="$1"
+  local lines="${2:-80}"
+
+  if [[ -f "$file_path" ]]; then
+    tail -n "$lines" "$file_path"
+  else
+    echo "$file_path does not exist yet."
+  fi
+}
+
+file_head() {
+  local file_path="$1"
+  local lines="${2:-80}"
+
+  if [[ -f "$file_path" ]]; then
+    head -n "$lines" "$file_path"
+  else
+    echo "$file_path does not exist yet."
+  fi
+}
+
+file_tail_newest_first() {
+  local file_path="$1"
+  local lines="${2:-80}"
+
+  if [[ -f "$file_path" ]]; then
+    tail -n "$lines" "$file_path" | sed '1!G;h;$!d'
+  else
+    echo "$file_path does not exist yet."
+  fi
+}
+
+human_duration() {
+  local seconds="$1"
+  local days hours minutes remainder
+  local parts=()
+
+  if (( seconds < 60 )); then
+    echo "${seconds} seconds"
+    return
+  fi
+
+  days=$(( seconds / 86400 ))
+  remainder=$(( seconds % 86400 ))
+  hours=$(( remainder / 3600 ))
+  remainder=$(( remainder % 3600 ))
+  minutes=$(( remainder / 60 ))
+  remainder=$(( remainder % 60 ))
+
+  (( days > 0 )) && parts+=("${days} day$([[ "$days" == 1 ]] || echo s)")
+  (( hours > 0 )) && parts+=("${hours} hour$([[ "$hours" == 1 ]] || echo s)")
+  (( minutes > 0 )) && parts+=("${minutes} minute$([[ "$minutes" == 1 ]] || echo s)")
+  (( remainder > 0 )) && parts+=("${remainder} second$([[ "$remainder" == 1 ]] || echo s)")
+
+  echo "${(j:, :)parts}"
+}
+
+agent_status() {
+  local label="$1"
+  local domain="gui/$(id -u)"
+
+  if launchctl print "$domain/$label" >/dev/null 2>&1; then
+    echo "loaded"
+  else
+    echo "not loaded"
+  fi
+}
+
+last_successful_sync() {
+  local last_run_file="$SYNC_STATE_DIR/sync.last-run"
+
+  if [[ -f "$last_run_file" ]]; then
+    cat "$last_run_file"
+  else
+    echo "never"
+  fi
+}
+
+last_success_age_seconds() {
+  local last_run_file="$SYNC_STATE_DIR/sync.last-run"
+
+  if [[ -f "$last_run_file" ]]; then
+    echo $(( $(date +%s) - $(stat -f %m "$last_run_file") ))
+  else
+    echo ""
+  fi
+}
+
+value_row() {
+  local label="$1"
+  local value="$2"
+
+  printf '<tr><th>%s</th><td>%s</td></tr>\n' \
+    "$(printf '%s' "$label" | html_escape)" \
+    "$(printf '%s' "$value" | html_escape)"
+}
+
+duration_row() {
+  local label="$1"
+  local seconds="$2"
+
+  printf '<tr><th>%s</th><td class="raw-duration">%ss</td><td class="readable-duration">(%s)</td></tr>\n' \
+    "$(printf '%s' "$label" | html_escape)" \
+    "$(printf '%s' "$seconds" | html_escape)" \
+    "$(human_duration "$seconds" | html_escape)"
+}
+
+code_row() {
+  local label="$1"
+  local value="$2"
+
+  printf '<tr><th>%s</th><td><code>%s</code></td></tr>\n' \
+    "$(printf '%s' "$label" | html_escape)" \
+    "$(printf '%s' "$value" | html_escape)"
+}
+
+source_rows() {
+  local source_dir
+  local destination_dir
+  local filter_file
+
+  if ! has_sync_sources; then
+    echo '<tr><td colspan="3">No source folders configured.</td></tr>'
+    return
+  fi
+
+  while IFS= read -r source_dir; do
+    if reject_source_path "$source_dir" >/dev/null 2>&1; then
+      destination_dir="$(destination_for_source "$source_dir")"
+      filter_file="$(filter_file_for_source "$source_dir")"
+      printf '<tr><td><code>%s</code></td><td><code>%s</code></td><td><code>%s</code></td></tr>\n' \
+        "$(printf '%s' "$source_dir" | html_escape)" \
+        "$(printf '%s' "$destination_dir" | html_escape)" \
+        "$(printf '%s' "$filter_file" | html_escape)"
+    else
+      printf '<tr><td><code>%s</code></td><td colspan="2">Rejected: source is outside HOME</td></tr>\n' \
+        "$(printf '%s' "$source_dir" | html_escape)"
+    fi
+  done < <(iter_sync_sources)
+}
+
+critical_rows() {
+  local count=0
+  local source_dir
+  local age_seconds
+  local local_free_mb
+  local icloud_free_mb
+  local sync_agent
+  local health_agent
+
+  add_critical() {
+    local title="$1"
+    local detail="$2"
+
+    count=$((count + 1))
+    printf '<tr><th>%s</th><td>%s</td></tr>\n' \
+      "$(printf '%s' "$title" | html_escape)" \
+      "$(printf '%s' "$detail" | html_escape)"
+  }
+
+  if ! has_sync_sources; then
+    add_critical "No sources configured" "Choose at least one local source folder before relying on automation."
+  fi
+
+  while IFS= read -r source_dir; do
+    if ! reject_source_path "$source_dir" >/dev/null 2>&1; then
+      add_critical "Rejected source" "$source_dir is outside HOME and will not sync."
+    elif [[ ! -d "$source_dir" ]]; then
+      add_critical "Missing source" "$source_dir does not exist."
+    elif [[ -d "${source_dir}.git" ]]; then
+      add_critical "Repository source" "$source_dir is a Git repo. icloud-sync will mirror the whole repo directory unless its $(filter_file_for_source "$source_dir") file excludes paths."
+    fi
+  done < <(iter_sync_sources)
+
+  local_free_mb="$(free_mb_for_path "$HOME")"
+  if (( local_free_mb < SYNC_MIN_FREE_LOCAL_MB )); then
+    add_critical "Low local storage" "${local_free_mb} MB free; required ${SYNC_MIN_FREE_LOCAL_MB} MB."
+  fi
+
+  icloud_free_mb="$(free_mb_for_path "$SYNC_ICLOUD_ROOT")"
+  if (( icloud_free_mb < SYNC_MIN_FREE_ICLOUD_MB )); then
+    add_critical "Low iCloud target storage" "${icloud_free_mb} MB free; required ${SYNC_MIN_FREE_ICLOUD_MB} MB."
+  fi
+
+  age_seconds="$(last_success_age_seconds)"
+  if [[ -z "$age_seconds" ]]; then
+    add_critical "No successful sync yet" "Run scripts/sync-to-icloud after configuring sources."
+  elif (( age_seconds > SYNC_STALE_AFTER_SECONDS )); then
+    add_critical "Stale successful sync" "Last success was $(human_duration "$age_seconds") ago; threshold is $(human_duration "$SYNC_STALE_AFTER_SECONDS")."
+  fi
+
+  sync_agent="$(agent_status dev.icloud-sync)"
+  if [[ "$sync_agent" != "loaded" ]]; then
+    add_critical "Sync automation not loaded" "LaunchAgent dev.icloud-sync is $sync_agent."
+  fi
+
+  health_agent="$(agent_status dev.icloud-sync.health)"
+  if [[ "$health_agent" != "loaded" ]]; then
+    add_critical "Health automation not loaded" "LaunchAgent dev.icloud-sync.health is $health_agent."
+  fi
+
+  if (( count == 0 )); then
+    echo '<tr><td colspan="2">No critical notifications.</td></tr>'
+  fi
+}
+
+sync_log_output="$(file_head "$SYNC_LOG" 120)"
+health_log_output="$(file_tail_newest_first "$HEALTH_LOG" 120)"
+generated_at="$(date -Iseconds)"
+
+{
+  cat <<HTML
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="30">
+  <title>iCloud Sync Status</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7f5;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #5f6368;
+      --border: #d7d9dc;
+      --accent: #176b87;
+      --code: #f1f3f4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #191a1c;
+        --panel: #232528;
+        --text: #f1f3f4;
+        --muted: #bdc1c6;
+        --border: #3c4043;
+        --accent: #8ab4f8;
+        --code: #303134;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 20px 24px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 { margin: 0 0 4px; font-size: 24px; }
+    h2 { margin: 0 0 10px; font-size: 16px; }
+    main {
+      display: grid;
+      gap: 16px;
+      padding: 16px 24px 24px;
+    }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      padding: 8px;
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 600; }
+    .critical th {
+      width: 260px;
+      color: var(--text);
+    }
+    .status-grid {
+      display: grid;
+      grid-template-columns: minmax(360px, 0.8fr) minmax(520px, 1.2fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .status-times { grid-column: 1; }
+    .status-info { grid-column: 2; }
+    .status-grid h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .status-grid th {
+      width: 220px;
+    }
+    .status-times th {
+      width: 240px;
+    }
+    .raw-duration {
+      width: 88px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .readable-duration {
+      width: 160px;
+      white-space: nowrap;
+    }
+    @media (max-width: 820px) {
+      .status-grid {
+        grid-template-columns: 1fr;
+      }
+      .status-times,
+      .status-info {
+        grid-column: 1;
+      }
+    }
+    code, pre {
+      font-family: Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+    code {
+      background: var(--code);
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    pre {
+      overflow: auto;
+      white-space: pre-wrap;
+      margin: 0;
+      padding: 12px;
+      background: var(--code);
+      border-radius: 6px;
+      max-height: 360px;
+    }
+    .muted { color: var(--muted); }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .button {
+      display: inline-block;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--accent);
+      padding: 6px 10px;
+      text-decoration: none;
+      background: var(--panel);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>iCloud Sync Status</h1>
+    <div class="muted">Generated $generated_at. This page refreshes every 30 seconds.</div>
+    <div class="actions">
+      <a class="button" href="file://$SYNC_PAIRS_FILE">Open source config</a>
+      <a class="button" href="file://$SYNC_LOG">Open sync log</a>
+      <a class="button" href="file://$HEALTH_LOG">Open health log</a>
+    </div>
+  </header>
+  <main>
+    <section class="critical">
+      <h2>Critical Notifications</h2>
+      <table>
+        <tbody>
+HTML
+  critical_rows
+  cat <<HTML
+        </tbody>
+      </table>
+    </section>
+    <section>
+      <h2>Configured Mappings</h2>
+      <table>
+        <thead><tr><th>Local source</th><th>iCloud destination</th><th>Filter file</th></tr></thead>
+        <tbody>
+HTML
+  source_rows
+  cat <<HTML
+        </tbody>
+      </table>
+    </section>
+    <section>
+      <h2>Status</h2>
+      <div class="status-grid">
+        <div class="status-times">
+          <h3>Configured Times</h3>
+          <table>
+            <tbody>
+              $(duration_row "Sync interval" "$SYNC_INTERVAL_SECONDS")
+              $(duration_row "Stale after" "$SYNC_STALE_AFTER_SECONDS")
+              $(duration_row "Max run warning" "$SYNC_MAX_RUN_SECONDS")
+            </tbody>
+          </table>
+        </div>
+        <div class="status-info">
+          <h3>Paths and Other Info</h3>
+          <table>
+            <tbody>
+              $(code_row "Config file" "$CONFIG_FILE")
+              $(code_row "Source config" "$SYNC_PAIRS_FILE")
+              $(code_row "iCloud root" "$(normalize_dir "$SYNC_ICLOUD_ROOT")")
+              $(code_row "Sync log" "$SYNC_LOG")
+              $(code_row "Health log" "$HEALTH_LOG")
+              $(code_row "State dir" "$SYNC_STATE_DIR")
+              $(value_row "Filter file name" "$SYNC_FILTER_FILE_NAME")
+              $(value_row "Delete destination" "$SYNC_DELETE_DESTINATION")
+              $(value_row "Skip on low battery" "$SYNC_SKIP_ON_LOW_BATTERY")
+              $(value_row "Min battery" "${SYNC_MIN_BATTERY_PERCENT}%")
+              $(value_row "Local free" "$(free_mb_for_path "$HOME") MB (required ${SYNC_MIN_FREE_LOCAL_MB} MB)")
+              $(value_row "iCloud target free" "$(free_mb_for_path "$SYNC_ICLOUD_ROOT") MB (required ${SYNC_MIN_FREE_ICLOUD_MB} MB)")
+              $(value_row "Last successful sync" "$(last_successful_sync)")
+              $(value_row "Sync agent" "dev.icloud-sync: $(agent_status dev.icloud-sync)")
+              $(value_row "Health agent" "dev.icloud-sync.health: $(agent_status dev.icloud-sync.health)")
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Sync Log</h2>
+      <div class="muted">Newest runs are shown first.</div>
+      <pre>$(printf '%s' "$sync_log_output" | html_escape)</pre>
+    </section>
+    <section>
+      <h2>Health Log</h2>
+      <div class="muted">Newest entries are shown first.</div>
+      <pre>$(printf '%s' "$health_log_output" | html_escape)</pre>
+    </section>
+  </main>
+</body>
+</html>
+HTML
+} > "$DASHBOARD_FILE"
+
+if [[ "${ICLOUD_SYNC_GUI_OPEN:-1}" == "0" ]]; then
+  echo "Generated $DASHBOARD_FILE"
+else
+  open "$DASHBOARD_FILE"
+  echo "Opened $DASHBOARD_FILE"
+fi

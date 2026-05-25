@@ -2,10 +2,11 @@
 # Destination is computed as:
 #   $SYNC_ICLOUD_ROOT/<path relative to $HOME>
 #
-# Example, uncomment or replace after install:
-#   ~/projects/example-project/
+# Default option offered by scripts/configure-sync-sources:
+#   ~/projects/
 #
 # The example above maps to:
-#   ~/icloud/projects/example-project/
+#   ~/icloud/projects/
 
-# ~/projects/example-project/
+# This file starts with no active sources. Run:
+#   ./scripts/configure-sync-sources
