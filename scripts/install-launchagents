@@ -10,6 +10,7 @@ source "$REPO_ROOT/scripts/lib/icloud-sync-config"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 SYNC_LABEL="dev.icloud-sync"
 HEALTH_LABEL="dev.icloud-sync.health"
+FIRST_INSTALL=false
 
 install_config_file() {
   local source="$1"
@@ -23,11 +24,22 @@ install_config_file() {
   fi
 
   cp "$source" "$target"
+  FIRST_INSTALL=true
   echo "created $target"
 }
 
 install_config_file "$REPO_ROOT/config/icloud-sync.conf.example" "$CONFIG_FILE"
 install_config_file "$REPO_ROOT/config/sync-pairs.conf.example" "$SYNC_PAIRS_FILE"
+
+if ! has_sync_sources; then
+  echo "No sync sources are configured yet."
+  "$REPO_ROOT/scripts/configure-sync-sources"
+fi
+
+if ! has_sync_sources; then
+  echo "install cancelled: choose at least one local source folder before installing automation" >&2
+  exit 1
+fi
 
 if ! require_min_free_space "$HOME" "$SYNC_MIN_FREE_LOCAL_MB" "local storage"; then
   echo "install cancelled: local storage is below threshold" >&2
@@ -66,3 +78,8 @@ install_agent() {
 
 install_agent "$SYNC_LABEL"
 install_agent "$HEALTH_LABEL"
+
+if [[ "$FIRST_INSTALL" == "true" ]]; then
+  echo "opening status dashboard"
+  "$REPO_ROOT/scripts/icloud-sync-gui"
+fi

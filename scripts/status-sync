@@ -30,6 +30,7 @@ echo "iCloud root: $(normalize_dir "$SYNC_ICLOUD_ROOT")"
 echo "delete destination: $SYNC_DELETE_DESTINATION"
 echo "sync interval seconds: $SYNC_INTERVAL_SECONDS"
 echo "stale after seconds: $SYNC_STALE_AFTER_SECONDS"
+echo "filter file name: $SYNC_FILTER_FILE_NAME"
 echo "local free MB: $(free_mb_for_path "$HOME")"
 echo "required local free MB: $SYNC_MIN_FREE_LOCAL_MB"
 echo "iCloud target free MB: $(free_mb_for_path "$SYNC_ICLOUD_ROOT")"
@@ -43,6 +44,7 @@ while IFS= read -r source_dir; do
   has_mappings=true
   if reject_source_path "$source_dir" >/dev/null 2>&1; then
     echo "  $source_dir -> $(destination_for_source "$source_dir")"
+    echo "    filter: $(filter_file_for_source "$source_dir")"
   else
     echo "  rejected: $source_dir"
   fi
