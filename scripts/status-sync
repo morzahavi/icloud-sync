@@ -13,14 +13,53 @@ DOMAIN="gui/$(id -u)"
 STATE_DIR="$SYNC_STATE_DIR"
 LOG_DIR="$SYNC_LOG_DIR"
 LAST_RUN_FILE="$STATE_DIR/sync.last-run"
+LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+
+agent_script_name() {
+  case "$1" in
+    "$SYNC_LABEL") echo "sync-to-icloud" ;;
+    "$HEALTH_LABEL") echo "check-sync-health" ;;
+  esac
+}
+
+agent_program() {
+  local label="$1"
+  local plist="$LAUNCH_AGENTS_DIR/$label.plist"
+
+  [[ ! -f "$plist" ]] && return 1
+  plutil -extract ProgramArguments.2 raw -o - "$plist" 2>/dev/null
+}
+
+expected_agent_program() {
+  local label="$1"
+  local script_name
+
+  script_name="$(agent_script_name "$label")"
+  echo "exec \"$SCRIPT_DIR/$script_name\""
+}
 
 print_agent_status() {
   local label="$1"
+  local program
+  local expected
 
   if launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
     echo "$label: loaded"
   else
     echo "$label: not loaded"
+  fi
+
+  if program="$(agent_program "$label")"; then
+    expected="$(expected_agent_program "$label")"
+    echo "  program: $program"
+    if [[ "$program" == "$expected" ]]; then
+      echo "  matches this checkout: yes"
+    else
+      echo "  matches this checkout: no"
+      echo "  expected: $expected"
+    fi
+  else
+    echo "  plist: missing"
   fi
 }
 

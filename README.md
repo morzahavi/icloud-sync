@@ -2,6 +2,16 @@ icloud-sync is a safety-first macOS tool for one-way local-to-iCloud folder sync
 
 It mirrors configured local folders into iCloud Drive with `rsync`, does not delete destination-only files by default, and can run on a recurring LaunchAgent schedule.
 
+## Why This Exists
+
+icloud-sync exists because local development work and iCloud backup serve different jobs.
+
+The intended workflow is to keep active development in normal local folders, such as `~/projects`, where Git, editors, virtual environments, build tools, and caches behave predictably. iCloud is used as a readable mirror and recovery layer, not as the live development workspace.
+
+The tool is deliberately conservative. First install syncs only a small demo folder. Real project folders must be added explicitly, each source gets its own `.icloud-sync-filter`, destination-only files are kept by default, and the dashboard makes the current state visible before a user trusts the automation.
+
+The practical goal is machine-recovery confidence: if a laptop is lost, stolen, or replaced, important local project snapshots can be inspected from iCloud while Git remotes remain the source of repository history. This is not a replacement for Git, Time Machine, or a full backup system.
+
 ## Requirements
 
 - macOS with iCloud Drive enabled.
@@ -32,13 +42,13 @@ $HOME/.config/icloud-sync/icloud-sync.conf
 $HOME/.config/icloud-sync/sync-pairs.conf
 ```
 
-If no source folders are configured yet, the installer requires you to choose at least one explicitly before automation is installed. It offers this default mapping:
+If no source folders are configured yet, the installer creates and configures only this demo mapping:
 
 ```text
-~/projects/ -> ~/icloud/projects/
+~/projects/icloud-sync-demo/ -> ~/icloud/projects/icloud-sync-demo/
 ```
 
-You can accept that default and add more local development folders during setup.
+The default does not sync all of `~/projects`. Add real project folders only after choosing them explicitly and reviewing their filter files.
 
 It also installs and starts these LaunchAgents:
 
@@ -49,23 +59,31 @@ dev.icloud-sync.health
 
 The installer does not overwrite existing config. It cancels installation if local or iCloud target storage is below the configured free-space thresholds.
 
+If an existing LaunchAgent plist points to a different checkout of this repo, the installer refuses to replace it by default. Set `ICLOUD_SYNC_REPLACE_EXISTING=1` only when you intentionally want this checkout to take over automation.
+
 ## Source Folders
 
-No source folder is active until you choose it. If no source folders are configured yet, the installer runs the source-folder chooser before installing automation.
+On first install, only the demo source is active:
 
-Run the source-folder chooser manually:
+```text
+~/projects/icloud-sync-demo/ -> ~/icloud/projects/icloud-sync-demo/
+```
+
+The tool may assume `~/projects` is a good place to keep local development work, but it must not treat `~/projects` itself as a sync source by default.
+
+Run the source-folder chooser manually when you want to add or replace sync sources:
 
 ```zsh
 ./scripts/configure-sync-sources
 ```
 
-The chooser offers this default mapping:
+The chooser offers this demo mapping:
 
 ```text
-~/projects/ -> ~/icloud/projects/
+~/projects/icloud-sync-demo/ -> ~/icloud/projects/icloud-sync-demo/
 ```
 
-You can accept that default and add more local development folders.
+You can accept that demo source and add more local development folders explicitly.
 
 You can also edit the sync-pairs file directly:
 
@@ -76,18 +94,18 @@ $EDITOR "$HOME/.config/icloud-sync/sync-pairs.conf"
 Add one local source folder per line:
 
 ```text
-~/projects/
+~/projects/icloud-sync-demo/
 ~/dev/
 ```
 
 Destinations are derived automatically under iCloud:
 
 ```text
-~/projects/ -> ~/icloud/projects/
-~/dev/      -> ~/icloud/dev/
+~/projects/icloud-sync-demo/ -> ~/icloud/projects/icloud-sync-demo/
+~/dev/                     -> ~/icloud/dev/
 ```
 
-The installed example file contains no active source. No folder is synced until you choose or add a source.
+The installed default source is the demo folder only. No broader project folder is synced unless you add it.
 
 Each configured source folder gets a filter file named `.icloud-sync-filter` if it does not already exist. The source chooser creates it immediately, and `./scripts/sync-to-icloud` also creates it lazily for sources added by hand.
 
@@ -144,6 +162,7 @@ Open the simple status GUI:
 
 The GUI opens a local HTML dashboard and refreshes every 30 seconds. It includes:
 
+- Automation controls with commands to abort or start automation.
 - Critical notifications at the top.
 - Configured mappings.
 - Status split into configured times and paths/other info.
@@ -163,6 +182,18 @@ none configured
 The sync LaunchAgent runs every 10 minutes by default.
 
 The health LaunchAgent also runs every 10 minutes and logs whether the last successful sync is fresh, missing, or stale. It does not show macOS notifications.
+
+Abort automation without deleting config, logs, or plist files:
+
+```zsh
+./scripts/abort-automation
+```
+
+Start automation from existing LaunchAgent plist files:
+
+```zsh
+./scripts/start-automation
+```
 
 Uninstall both LaunchAgents:
 
@@ -199,7 +230,9 @@ See `docs/logs-and-status.md` for the process and status surfaces.
 ## Safety
 
 - Destination-only files are kept by default because `SYNC_DELETE_DESTINATION=false`.
+- First install syncs only `~/projects/icloud-sync-demo/` by default, not all of `~/projects`.
 - Sources outside `$HOME` are rejected.
+- Existing LaunchAgents from another checkout are not replaced unless `ICLOUD_SYNC_REPLACE_EXISTING=1` is set.
 - Repo folders are synced completely by default, including `.git/`, unless that source's `.icloud-sync-filter` excludes paths.
 - If running on battery and battery is below 30%, the sync is skipped.
 - If local or iCloud target storage has less than 2048 MB free, install or sync is skipped.

@@ -1,0 +1,30 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+LABELS=(
+  dev.icloud-sync
+  dev.icloud-sync.health
+)
+DOMAIN="gui/$(id -u)"
+
+for label in "${LABELS[@]}"; do
+  plist="$LAUNCH_AGENTS_DIR/$label.plist"
+  if [[ ! -f "$plist" ]]; then
+    echo "missing $plist; run ./scripts/install-launchagents first" >&2
+    exit 1
+  fi
+
+  if launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
+    echo "$label is already loaded"
+  else
+    launchctl bootstrap "$DOMAIN" "$plist"
+    launchctl enable "$DOMAIN/$label"
+    echo "started $label"
+  fi
+
+  launchctl kickstart -k "$DOMAIN/$label"
+done

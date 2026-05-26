@@ -36,6 +36,7 @@ LaunchAgent install. You can run it again at any time.
 
 The dashboard contains:
 
+- Automation controls: command snippets to abort or start the LaunchAgents.
 - Critical notifications: missing sources, rejected sources, low storage,
   missing or stale successful sync, and unloaded LaunchAgents.
 - Configured mappings: local source to iCloud destination.
@@ -45,12 +46,14 @@ The dashboard contains:
 
 ## Source-folder selection
 
-No source is active until the user chooses it. The setup helper offers this
-default mapping:
+First install creates and syncs only the demo source:
 
 ```text
-~/projects/ -> ~/icloud/projects/
+~/projects/icloud-sync-demo/ -> ~/icloud/projects/icloud-sync-demo/
 ```
+
+The tool may suggest `~/projects` as the place where development projects live,
+but it does not sync all of `~/projects` by default.
 
 You can add more local development folders with:
 

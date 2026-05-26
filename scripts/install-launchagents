@@ -32,8 +32,8 @@ install_config_file "$REPO_ROOT/config/icloud-sync.conf.example" "$CONFIG_FILE"
 install_config_file "$REPO_ROOT/config/sync-pairs.conf.example" "$SYNC_PAIRS_FILE"
 
 if ! has_sync_sources; then
-  echo "No sync sources are configured yet."
-  "$REPO_ROOT/scripts/configure-sync-sources"
+  echo "No sync sources are configured yet. Creating demo source only."
+  write_default_demo_sync_pairs
 fi
 
 if ! has_sync_sources; then
@@ -53,11 +53,25 @@ fi
 
 install_agent() {
   local label="$1"
+  local script_name="$2"
   local template="$REPO_ROOT/launchd/$label.plist"
   local target="$LAUNCH_AGENTS_DIR/$label.plist"
   local domain="gui/$(id -u)"
+  local expected_program="exec \"$REPO_ROOT/scripts/$script_name\""
+  local existing_program
 
   mkdir -p "$LAUNCH_AGENTS_DIR"
+
+  if [[ -f "$target" ]]; then
+    existing_program="$(plutil -extract ProgramArguments.2 raw -o - "$target" 2>/dev/null || true)"
+    if [[ -n "$existing_program" && "$existing_program" != "$expected_program" && "${ICLOUD_SYNC_REPLACE_EXISTING:-0}" != "1" ]]; then
+      echo "install cancelled: $target points to a different checkout" >&2
+      echo "existing: $existing_program" >&2
+      echo "expected: $expected_program" >&2
+      echo "Set ICLOUD_SYNC_REPLACE_EXISTING=1 to replace it intentionally." >&2
+      exit 1
+    fi
+  fi
 
   if launchctl print "$domain/$label" >/dev/null 2>&1; then
     launchctl bootout "$domain/$label"
@@ -76,8 +90,8 @@ install_agent() {
   echo "installed $label"
 }
 
-install_agent "$SYNC_LABEL"
-install_agent "$HEALTH_LABEL"
+install_agent "$SYNC_LABEL" "sync-to-icloud"
+install_agent "$HEALTH_LABEL" "check-sync-health"
 
 if [[ "$FIRST_INSTALL" == "true" ]]; then
   echo "opening status dashboard"

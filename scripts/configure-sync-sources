@@ -7,7 +7,7 @@ set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/icloud-sync-config"
 
-DEFAULT_SOURCE="$HOME/projects"
+DEFAULT_SOURCE="$HOME/projects/icloud-sync-demo"
 
 display_path() {
   local path="$1"
@@ -47,10 +47,10 @@ echo "Choose local folders to mirror into iCloud."
 echo "Default mapping:"
 print_mapping "$DEFAULT_SOURCE"
 echo
-echo "Nothing is synced unless you explicitly accept or enter a source folder."
+echo "The default is a demo folder only, not your whole projects directory."
 echo
 
-read "accept_default?Use the default source ~/projects? [y/N] "
+read "accept_default?Use the default source ~/projects/icloud-sync-demo? [Y/n] "
 
 tmp_file="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-pairs.XXXXXX")"
 {
@@ -61,7 +61,8 @@ tmp_file="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-pairs.XXXXXX")"
   echo "# Configured by scripts/configure-sync-sources on $(date -Iseconds)."
 } > "$tmp_file"
 
-if [[ "$accept_default" == [yY] || "$accept_default" == [yY][eE][sS] ]]; then
+if [[ -z "$accept_default" || "$accept_default" == [yY] || "$accept_default" == [yY][eE][sS] ]]; then
+  mkdir -p "$DEFAULT_SOURCE"
   append_source "$DEFAULT_SOURCE" >> "$tmp_file"
 fi
 
