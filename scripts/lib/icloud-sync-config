@@ -23,6 +23,7 @@ SYNC_MAX_LOG_BYTES=1048576
 SYNC_MAX_ROTATED_LOGS=3
 SYNC_LOCK_DIR="/tmp/icloud-sync.lock"
 SYNC_FILTER_FILE_NAME=".icloud-sync-filter"
+SYNC_DEFAULT_DEMO_SOURCE="$HOME/projects/icloud-sync-demo"
 
 if [[ -f "$CONFIG_FILE" ]]; then
   source "$CONFIG_FILE"
@@ -156,4 +157,23 @@ has_sync_sources() {
   done < <(iter_sync_sources)
 
   return 1
+}
+
+write_default_demo_sync_pairs() {
+  local demo_source
+
+  demo_source="$(normalize_dir "$SYNC_DEFAULT_DEMO_SOURCE")"
+  mkdir -p "$demo_source"
+  ensure_filter_file_for_source "$demo_source"
+  mkdir -p "$(dirname "$SYNC_PAIRS_FILE")"
+
+  {
+    echo "# One local source folder per line."
+    echo "# Destination is computed as:"
+    echo "#   \$SYNC_ICLOUD_ROOT/<path relative to \$HOME>"
+    echo "#"
+    echo "# Default demo source configured on $(date -Iseconds)."
+    echo "# Add real project folders only after reviewing their .icloud-sync-filter files."
+    echo "~/projects/icloud-sync-demo/"
+  } > "$SYNC_PAIRS_FILE"
 }

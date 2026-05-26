@@ -22,3 +22,4 @@ SYNC_MAX_ROTATED_LOGS=3
 
 SYNC_LOCK_DIR="/tmp/icloud-sync.lock"
 SYNC_FILTER_FILE_NAME=".icloud-sync-filter"
+SYNC_DEFAULT_DEMO_SOURCE="$HOME/projects/icloud-sync-demo"

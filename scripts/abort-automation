@@ -1,0 +1,20 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+LABELS=(
+  dev.icloud-sync
+  dev.icloud-sync.health
+)
+DOMAIN="gui/$(id -u)"
+
+for label in "${LABELS[@]}"; do
+  if launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
+    launchctl bootout "$DOMAIN/$label"
+    echo "aborted $label"
+  else
+    echo "$label is not loaded"
+  fi
+done
