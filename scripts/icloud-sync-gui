@@ -423,7 +423,7 @@ generated_at="$(date -Iseconds)"
     }
     .automation-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(260px, 1fr));
+      grid-template-columns: repeat(3, minmax(260px, 1fr));
       gap: 12px;
     }
     .automation-action {
@@ -468,6 +468,12 @@ generated_at="$(date -Iseconds)"
     <section>
       <h2>Automation Controls</h2>
       <div class="automation-grid">
+        <div class="automation-action">
+          <h3>Sync Now</h3>
+          <div class="muted">Runs one sync immediately using the current source config.</div>
+          <pre>cd "$REPO_ROOT"
+./scripts/sync-to-icloud</pre>
+        </div>
         <div class="automation-action">
           <h3>Abort Automation</h3>
           <div class="muted">Stops both LaunchAgents but keeps config, logs, and plist files.</div>

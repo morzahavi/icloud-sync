@@ -6,7 +6,7 @@ It mirrors configured local folders into iCloud Drive with `rsync`, does not del
 
 icloud-sync exists because local development work and iCloud backup serve different jobs.
 
-The intended workflow is to keep active development in normal local folders, such as `~/projects`, where Git, editors, virtual environments, build tools, and caches behave predictably. iCloud is used as a readable mirror and recovery layer, not as the live development workspace.
+The intended workflow is to keep active development in normal local folders, such as `~/projects`, where Git, editors, virtual environments, build tools, and caches behave predictably. iCloud is used as a readable mirror and recovery layer, not as the live development workspace. The most immediate use case is being able to inspect outputs, notes, generated files, or reports from a phone or another device without moving the live project into iCloud.
 
 The tool is deliberately conservative. First install syncs only a small demo folder. Real project folders must be added explicitly, each source gets its own `.icloud-sync-filter`, destination-only files are kept by default, and the dashboard makes the current state visible before a user trusts the automation.
 
