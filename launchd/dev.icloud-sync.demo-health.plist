@@ -4,13 +4,13 @@
 <plist version="1.0">
   <dict>
     <key>Label</key>
-    <string>com.mor.icloud-sync-demo</string>
+    <string>dev.icloud-sync.demo-health</string>
 
     <key>ProgramArguments</key>
     <array>
       <string>/bin/zsh</string>
       <string>-lc</string>
-      <string>exec "$HOME/projects/icloud-sync/scripts/sync-demo-to-icloud"</string>
+      <string>exec "__REPO_ROOT__/scripts/check-demo-sync-health"</string>
     </array>
 
     <key>StartInterval</key>
