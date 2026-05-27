@@ -19,7 +19,6 @@ MAX_RUN_SECONDS="${ICLOUD_SYNC_MAX_RUN_SECONDS:-$SYNC_MAX_RUN_SECONDS}"
 ALERT_MODE="${ICLOUD_SYNC_ALERT_MODE:-$SYNC_ALERT_MODE}"
 
 mkdir -p "$LOG_DIR" "$STATE_DIR"
-date -Iseconds > "$LAST_RUN_FILE"
 
 log_size_bytes() {
   wc -c < "$LOG_FILE" | tr -d '[:space:]'
@@ -218,6 +217,10 @@ set -e
 
 prepend_log_block "$run_log"
 rm -f "$run_log"
+
+if (( rsync_status == 0 )); then
+  date -Iseconds > "$LAST_RUN_FILE"
+fi
 
 if (( rsync_status == 0 && run_duration_seconds > MAX_RUN_SECONDS )); then
   send_alert "Demo sync took ${run_duration_seconds}s, above ${MAX_RUN_SECONDS}s."
