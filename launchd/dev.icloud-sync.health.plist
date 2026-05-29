@@ -8,9 +8,7 @@
 
     <key>ProgramArguments</key>
     <array>
-      <string>/bin/zsh</string>
-      <string>-lc</string>
-      <string>exec "__REPO_ROOT__/scripts/check-sync-health"</string>
+      <string>__WRAPPER_PATH__</string>
     </array>
 
     <key>StartInterval</key>

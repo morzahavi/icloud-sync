@@ -14,8 +14,16 @@ STATE_DIR="$SYNC_STATE_DIR"
 LOG_DIR="$SYNC_LOG_DIR"
 LAST_RUN_FILE="$STATE_DIR/sync.last-run"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+WRAPPER_BIN_DIR="$HOME/Library/Application Support/iCloud Sync/bin"
 
-agent_script_name() {
+agent_wrapper_name() {
+  case "$1" in
+    "$SYNC_LABEL") echo "iCloud Sync Agent" ;;
+    "$HEALTH_LABEL") echo "iCloud Sync Health" ;;
+  esac
+}
+
+agent_target_script_name() {
   case "$1" in
     "$SYNC_LABEL") echo "sync-to-icloud" ;;
     "$HEALTH_LABEL") echo "check-sync-health" ;;
@@ -25,17 +33,32 @@ agent_script_name() {
 agent_program() {
   local label="$1"
   local plist="$LAUNCH_AGENTS_DIR/$label.plist"
+  local program
 
   [[ ! -f "$plist" ]] && return 1
-  plutil -extract ProgramArguments.2 raw -o - "$plist" 2>/dev/null
+  program="$(plutil -extract ProgramArguments.0 raw -o - "$plist" 2>/dev/null || true)"
+  if [[ "$program" == "/bin/zsh" ]]; then
+    program="$(plutil -extract ProgramArguments.2 raw -o - "$plist" 2>/dev/null || true)"
+  fi
+  [[ -n "$program" ]] && echo "$program"
 }
 
 expected_agent_program() {
   local label="$1"
+  local wrapper_name
+
+  wrapper_name="$(agent_wrapper_name "$label")"
+  echo "$WRAPPER_BIN_DIR/$wrapper_name"
+}
+
+agent_wrapper_matches_checkout() {
+  local label="$1"
+  local wrapper_path
   local script_name
 
-  script_name="$(agent_script_name "$label")"
-  echo "exec \"$SCRIPT_DIR/$script_name\""
+  wrapper_path="$(expected_agent_program "$label")"
+  script_name="$(agent_target_script_name "$label")"
+  [[ -f "$wrapper_path" ]] && grep -Fqx "exec \"$SCRIPT_DIR/$script_name\" \"\$@\"" "$wrapper_path"
 }
 
 print_agent_status() {
@@ -52,11 +75,14 @@ print_agent_status() {
   if program="$(agent_program "$label")"; then
     expected="$(expected_agent_program "$label")"
     echo "  program: $program"
-    if [[ "$program" == "$expected" ]]; then
+    if [[ "$program" == "$expected" ]] && agent_wrapper_matches_checkout "$label"; then
       echo "  matches this checkout: yes"
     else
       echo "  matches this checkout: no"
       echo "  expected: $expected"
+      if [[ "$program" == "$expected" ]]; then
+        echo "  wrapper target differs from this checkout"
+      fi
     fi
   else
     echo "  plist: missing"

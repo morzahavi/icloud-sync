@@ -57,9 +57,16 @@ dev.icloud-sync
 dev.icloud-sync.health
 ```
 
+The LaunchAgents run named wrapper executables directly, so macOS Login Items shows human-readable background item names instead of a generic shell:
+
+```text
+$HOME/Library/Application Support/iCloud Sync/bin/iCloud Sync Agent
+$HOME/Library/Application Support/iCloud Sync/bin/iCloud Sync Health
+```
+
 The installer does not overwrite existing config. It cancels installation if local or iCloud target storage is below the configured free-space thresholds.
 
-If an existing LaunchAgent plist points to a different checkout of this repo, the installer refuses to replace it by default. Set `ICLOUD_SYNC_REPLACE_EXISTING=1` only when you intentionally want this checkout to take over automation.
+If an existing LaunchAgent plist or wrapper executable points to a different checkout of this repo, the installer refuses to replace it by default. Set `ICLOUD_SYNC_REPLACE_EXISTING=1` only when you intentionally want this checkout to take over automation.
 
 ## Source Folders
 
@@ -201,7 +208,7 @@ Uninstall both LaunchAgents:
 ./scripts/uninstall-launchagents
 ```
 
-Uninstalling removes the LaunchAgent plist files. It does not remove your config, logs, state files, source folders, or iCloud destination folders.
+Uninstalling removes the LaunchAgent plist files and named wrapper executables. It does not remove your config, logs, state files, source folders, or iCloud destination folders.
 
 ## Logs and State
 
@@ -232,7 +239,7 @@ See `docs/logs-and-status.md` for the process and status surfaces.
 - Destination-only files are kept by default because `SYNC_DELETE_DESTINATION=false`.
 - First install syncs only `~/projects/icloud-sync-demo/` by default, not all of `~/projects`.
 - Sources outside `$HOME` are rejected.
-- Existing LaunchAgents from another checkout are not replaced unless `ICLOUD_SYNC_REPLACE_EXISTING=1` is set.
+- Existing LaunchAgents or wrapper executables from another checkout are not replaced unless `ICLOUD_SYNC_REPLACE_EXISTING=1` is set.
 - Repo folders are synced completely by default, including `.git/`, unless that source's `.icloud-sync-filter` excludes paths.
 - If running on battery and battery is below 30%, the sync is skipped.
 - If local or iCloud target storage has less than 2048 MB free, install or sync is skipped.
