@@ -42,14 +42,6 @@ rm -rf "$HOME/.local/share/icloud-sync"
 rm -rf "$HOME/projects/icloud-sync-demo"
 rm -rf "$HOME/icloud/projects/icloud-sync-demo"
 
-cd "$HOME/projects"
-rm -rf icloud-sync
-git clone https://github.com/morzahavi/icloud-sync.git
-cd icloud-sync
-git switch dev
-
-./scripts/install-launchagents
-./scripts/status-sync
 ```
 
 Expected result:

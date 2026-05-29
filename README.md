@@ -30,8 +30,10 @@ cd icloud-sync
 Install the user config files and LaunchAgents:
 
 ```zsh
-./scripts/install-launchagents
+./install
 ```
+
+The root installer delegates to `./scripts/install-launchagents`.
 
 On first install, the installer opens the local status dashboard after the LaunchAgents are installed.
 
