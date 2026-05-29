@@ -159,6 +159,18 @@ has_sync_sources() {
   return 1
 }
 
+refresh_status_dashboard() {
+  local dashboard_script="${SCRIPT_DIR:-}/icloud-sync-gui"
+
+  if [[ ! -x "$dashboard_script" ]]; then
+    return
+  fi
+
+  ICLOUD_SYNC_GUI_OPEN=0 "$dashboard_script" >/dev/null 2>&1 || {
+    echo "warning: failed to refresh status dashboard: $dashboard_script" >&2
+  }
+}
+
 write_default_demo_sync_pairs() {
   local demo_source
 

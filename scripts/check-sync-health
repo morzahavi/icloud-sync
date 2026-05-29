@@ -45,6 +45,7 @@ rotate_health_log_if_needed() {
 log_health() {
   rotate_health_log_if_needed
   echo "$(date -Iseconds) $1" >> "$HEALTH_LOG"
+  refresh_status_dashboard
 }
 
 file_age_seconds() {
