@@ -6,3 +6,4 @@
 *.tmp
 *.swp
 *~
+.icloud-sync-filter
