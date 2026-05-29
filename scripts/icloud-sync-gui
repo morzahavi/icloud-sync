@@ -13,6 +13,7 @@ DASHBOARD_FILE="$DASHBOARD_DIR/status.html"
 SYNC_LOG="$SYNC_LOG_DIR/sync.log"
 HEALTH_LOG="$SYNC_LOG_DIR/sync-health.log"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+WRAPPER_BIN_DIR="$HOME/Library/Application Support/iCloud Sync/bin"
 
 mkdir -p "$DASHBOARD_DIR"
 
@@ -92,7 +93,14 @@ agent_status() {
   fi
 }
 
-agent_script_name() {
+agent_wrapper_name() {
+  case "$1" in
+    dev.icloud-sync) echo "iCloud Sync Agent" ;;
+    dev.icloud-sync.health) echo "iCloud Sync Health" ;;
+  esac
+}
+
+agent_target_script_name() {
   case "$1" in
     dev.icloud-sync) echo "sync-to-icloud" ;;
     dev.icloud-sync.health) echo "check-sync-health" ;;
@@ -102,17 +110,32 @@ agent_script_name() {
 agent_program() {
   local label="$1"
   local plist="$LAUNCH_AGENTS_DIR/$label.plist"
+  local program
 
   [[ ! -f "$plist" ]] && return 1
-  plutil -extract ProgramArguments.2 raw -o - "$plist" 2>/dev/null
+  program="$(plutil -extract ProgramArguments.0 raw -o - "$plist" 2>/dev/null || true)"
+  if [[ "$program" == "/bin/zsh" ]]; then
+    program="$(plutil -extract ProgramArguments.2 raw -o - "$plist" 2>/dev/null || true)"
+  fi
+  [[ -n "$program" ]] && echo "$program"
 }
 
 expected_agent_program() {
   local label="$1"
+  local wrapper_name
+
+  wrapper_name="$(agent_wrapper_name "$label")"
+  echo "$WRAPPER_BIN_DIR/$wrapper_name"
+}
+
+agent_wrapper_matches_checkout() {
+  local label="$1"
+  local wrapper_path
   local script_name
 
-  script_name="$(agent_script_name "$label")"
-  echo "exec \"$SCRIPT_DIR/$script_name\""
+  wrapper_path="$(expected_agent_program "$label")"
+  script_name="$(agent_target_script_name "$label")"
+  [[ -f "$wrapper_path" ]] && grep -Fqx "exec \"$SCRIPT_DIR/$script_name\" \"\$@\"" "$wrapper_path"
 }
 
 agent_matches_checkout() {
@@ -120,7 +143,7 @@ agent_matches_checkout() {
   local program
 
   program="$(agent_program "$label" 2>/dev/null || true)"
-  [[ -n "$program" && "$program" == "$(expected_agent_program "$label")" ]]
+  [[ -n "$program" && "$program" == "$(expected_agent_program "$label")" ]] && agent_wrapper_matches_checkout "$label"
 }
 
 agent_status_detail() {

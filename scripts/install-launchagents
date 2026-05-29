@@ -8,6 +8,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$REPO_ROOT/scripts/lib/icloud-sync-config"
 
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+WRAPPER_BIN_DIR="$HOME/Library/Application Support/iCloud Sync/bin"
 SYNC_LABEL="dev.icloud-sync"
 HEALTH_LABEL="dev.icloud-sync.health"
 FIRST_INSTALL=false
@@ -54,17 +55,24 @@ fi
 install_agent() {
   local label="$1"
   local script_name="$2"
+  local wrapper_name="$3"
   local template="$REPO_ROOT/launchd/$label.plist"
   local target="$LAUNCH_AGENTS_DIR/$label.plist"
   local domain="gui/$(id -u)"
-  local expected_program="exec \"$REPO_ROOT/scripts/$script_name\""
+  local wrapper_path="$WRAPPER_BIN_DIR/$wrapper_name"
+  local expected_program="$wrapper_path"
+  local legacy_expected_program="exec \"$REPO_ROOT/scripts/$script_name\""
   local existing_program
 
   mkdir -p "$LAUNCH_AGENTS_DIR"
+  mkdir -p "$WRAPPER_BIN_DIR"
 
   if [[ -f "$target" ]]; then
-    existing_program="$(plutil -extract ProgramArguments.2 raw -o - "$target" 2>/dev/null || true)"
-    if [[ -n "$existing_program" && "$existing_program" != "$expected_program" && "${ICLOUD_SYNC_REPLACE_EXISTING:-0}" != "1" ]]; then
+    existing_program="$(plutil -extract ProgramArguments.0 raw -o - "$target" 2>/dev/null || true)"
+    if [[ "$existing_program" == "/bin/zsh" ]]; then
+      existing_program="$(plutil -extract ProgramArguments.2 raw -o - "$target" 2>/dev/null || true)"
+    fi
+    if [[ -n "$existing_program" && "$existing_program" != "$expected_program" && "$existing_program" != "$legacy_expected_program" && "${ICLOUD_SYNC_REPLACE_EXISTING:-0}" != "1" ]]; then
       echo "install cancelled: $target points to a different checkout" >&2
       echo "existing: $existing_program" >&2
       echo "expected: $expected_program" >&2
@@ -73,12 +81,26 @@ install_agent() {
     fi
   fi
 
+  if [[ -f "$wrapper_path" && "${ICLOUD_SYNC_REPLACE_EXISTING:-0}" != "1" ]]; then
+    if ! grep -Fqx "exec \"$REPO_ROOT/scripts/$script_name\" \"\$@\"" "$wrapper_path"; then
+      echo "install cancelled: $wrapper_path points to a different checkout" >&2
+      echo "Set ICLOUD_SYNC_REPLACE_EXISTING=1 to replace it intentionally." >&2
+      exit 1
+    fi
+  fi
+
+  cat > "$wrapper_path" <<EOF
+#!/bin/zsh
+exec "$REPO_ROOT/scripts/$script_name" "\$@"
+EOF
+  chmod 755 "$wrapper_path"
+
   if launchctl print "$domain/$label" >/dev/null 2>&1; then
     launchctl bootout "$domain/$label"
   fi
 
   sed \
-    -e "s#__REPO_ROOT__#$REPO_ROOT#g" \
+    -e "s#__WRAPPER_PATH__#$wrapper_path#g" \
     -e "s#<integer>600</integer>#<integer>$SYNC_INTERVAL_SECONDS</integer>#g" \
     "$template" > "$target"
   plutil -lint "$target" >/dev/null
@@ -90,8 +112,8 @@ install_agent() {
   echo "installed $label"
 }
 
-install_agent "$SYNC_LABEL" "sync-to-icloud"
-install_agent "$HEALTH_LABEL" "check-sync-health"
+install_agent "$SYNC_LABEL" "sync-to-icloud" "iCloud Sync Agent"
+install_agent "$HEALTH_LABEL" "check-sync-health" "iCloud Sync Health"
 
 if [[ "$FIRST_INSTALL" == "true" ]]; then
   echo "opening status dashboard"

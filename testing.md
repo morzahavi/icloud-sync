@@ -26,7 +26,7 @@ Expected result:
 - config is recreated under `$HOME/.config/icloud-sync`;
 - logs and state are recreated under `$HOME/.local/share/icloud-sync`;
 - only the demo source is configured by default;
-- both LaunchAgents are loaded from the current checkout;
+- both LaunchAgents are loaded through wrappers for the current checkout;
 - `./scripts/status-sync` shows the demo mapping and matching checkout paths.
 
 ## Test Fresh Clone
@@ -56,13 +56,14 @@ Expected result:
 
 - the cloned `dev` branch installs without relying on prior local state;
 - config and demo folders are recreated from scratch;
-- both LaunchAgents point to the freshly cloned checkout;
+- both LaunchAgent wrappers point to the freshly cloned checkout;
 - `./scripts/status-sync` reports `matches this checkout: yes` for both agents.
 
 ## Normal Uninstall Only
 
 Use this when you only want to stop automation and remove the LaunchAgent plist
-files while keeping config, logs, state, and synced data.
+files and wrapper executables while keeping config, logs, state, and synced
+data.
 
 ```zsh
 ./scripts/uninstall-launchagents
@@ -73,6 +74,8 @@ This removes:
 ```text
 $HOME/Library/LaunchAgents/dev.icloud-sync.plist
 $HOME/Library/LaunchAgents/dev.icloud-sync.health.plist
+$HOME/Library/Application Support/iCloud Sync/bin/iCloud Sync Agent
+$HOME/Library/Application Support/iCloud Sync/bin/iCloud Sync Health
 ```
 
 It does not remove:

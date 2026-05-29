@@ -5,9 +5,14 @@ set -u
 set -o pipefail
 
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+WRAPPER_BIN_DIR="$HOME/Library/Application Support/iCloud Sync/bin"
 LABELS=(
   dev.icloud-sync
   dev.icloud-sync.health
+)
+WRAPPERS=(
+  "iCloud Sync Agent"
+  "iCloud Sync Health"
 )
 DOMAIN="gui/$(id -u)"
 
@@ -18,4 +23,8 @@ for label in "${LABELS[@]}"; do
 
   rm -f "$LAUNCH_AGENTS_DIR/$label.plist"
   echo "uninstalled $label"
+done
+
+for wrapper in "${WRAPPERS[@]}"; do
+  rm -f "$WRAPPER_BIN_DIR/$wrapper"
 done
