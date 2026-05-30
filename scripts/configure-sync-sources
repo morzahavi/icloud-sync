@@ -1,0 +1,98 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib/icloud-sync-config"
+
+DEFAULT_SOURCE="$HOME/projects/icloud-sync-demo"
+
+display_path() {
+  local path="$1"
+
+  if [[ "$path" == "$HOME" ]]; then
+    echo "~"
+  elif [[ "$path" == "$HOME/"* ]]; then
+    echo "~/${path#$HOME/}"
+  else
+    echo "$path"
+  fi
+}
+
+print_mapping() {
+  local source="$1"
+  echo "  $(display_path "$(normalize_dir "$source")") -> $(display_path "$(destination_for_source "$source")")"
+}
+
+append_source() {
+  local source="$1"
+  local normalized
+
+  normalized="$(normalize_dir "$source")"
+  reject_source_path "$normalized" >/dev/null
+  printf '%s\n' "$(display_path "$normalized")"
+}
+
+if [[ ! -t 0 ]]; then
+  echo "configure-sync-sources needs an interactive terminal." >&2
+  echo "Edit $SYNC_PAIRS_FILE manually and add one local source folder per line." >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "$SYNC_PAIRS_FILE")"
+
+echo "Choose local folders to mirror into iCloud."
+echo "Default mapping:"
+print_mapping "$DEFAULT_SOURCE"
+echo
+echo "The default is a demo folder only, not your whole projects directory."
+echo
+
+read "accept_default?Use the default source ~/projects/icloud-sync-demo? [Y/n] "
+
+tmp_file="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-pairs.XXXXXX")"
+{
+  echo "# One local source folder per line."
+  echo "# Destination is computed as:"
+  echo "#   \$SYNC_ICLOUD_DRIVE_SYMLINK/<path relative to \$HOME>"
+  echo "#"
+  echo "# Configured by scripts/configure-sync-sources on $(date -Iseconds)."
+} > "$tmp_file"
+
+if [[ -z "$accept_default" || "$accept_default" == [yY] || "$accept_default" == [yY][eE][sS] ]]; then
+  mkdir -p "$DEFAULT_SOURCE"
+  append_source "$DEFAULT_SOURCE" >> "$tmp_file"
+fi
+
+while true; do
+  echo
+  read "source_dir?Add another local source folder, or press Enter to finish: "
+  [[ -z "$source_dir" ]] && break
+
+  source_dir="$(expand_path "$source_dir")"
+  if ! reject_source_path "$(normalize_dir "$source_dir")"; then
+    echo "Skipped: sources must be under $HOME"
+    continue
+  fi
+
+  echo "Adding:"
+  print_mapping "$source_dir"
+  append_source "$source_dir" >> "$tmp_file"
+done
+
+if ! grep -v '^[[:space:]]*#' "$tmp_file" | grep -q '[^[:space:]]'; then
+  rm -f "$tmp_file"
+  echo "No sync sources selected. Configuration was not changed." >&2
+  exit 1
+fi
+
+mv "$tmp_file" "$SYNC_PAIRS_FILE"
+echo
+echo "Wrote $SYNC_PAIRS_FILE"
+echo "Configured mappings:"
+while IFS= read -r source_dir; do
+  ensure_filter_file_for_source "$source_dir" || true
+  print_mapping "$source_dir"
+done < <(iter_sync_sources)

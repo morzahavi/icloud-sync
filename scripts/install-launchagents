@@ -1,0 +1,431 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$REPO_ROOT/scripts/lib/icloud-sync-config"
+
+LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+APP_SUPPORT_DIR="$HOME/Library/Application Support/iCloud Sync"
+RUNTIME_DIR="$APP_SUPPORT_DIR/app"
+RUNTIME_SCRIPTS_DIR="$RUNTIME_DIR/scripts"
+RUNTIME_CONFIG_DIR="$RUNTIME_DIR/config"
+RUNTIME_LAUNCHD_DIR="$RUNTIME_DIR/launchd"
+WRAPPER_BIN_DIR="$APP_SUPPORT_DIR/bin"
+SYNC_LABEL="dev.icloud-sync"
+HEALTH_LABEL="dev.icloud-sync.health"
+FIRST_INSTALL=false
+
+print_docs_hint() {
+  echo "See README.md for configuration, safety behavior, and troubleshooting."
+}
+
+installed_command() {
+  local script_name="$1"
+
+  printf '"%s/%s"\n' "$RUNTIME_SCRIPTS_DIR" "$script_name"
+}
+
+print_stage_heading() {
+  local title="$1"
+
+  echo "=============================================================================="
+  echo "$title"
+  echo "=============================================================================="
+  echo
+}
+
+require_interactive_terminal() {
+  if [[ ! -t 0 ]]; then
+    echo "install cancelled: interactive consent is required" >&2
+    echo "Run ./install in a terminal and type agree when you accept each step." >&2
+    print_docs_hint >&2
+    exit 1
+  fi
+}
+
+require_agree() {
+  local prompt="$1"
+  local answer
+
+  echo "$prompt"
+  echo "Type agree to continue."
+
+  read "answer?> "
+  if [[ "$answer" != "agree" ]]; then
+    echo "install cancelled: expected agree" >&2
+    print_docs_hint >&2
+    exit 1
+  fi
+}
+
+require_choice() {
+  local prompt="$1"
+  shift
+  local answer
+  local choice
+
+  echo "$prompt" >&2
+  echo "Choose one: $*" >&2
+
+  read "answer?> "
+  for choice in "$@"; do
+    if [[ "$answer" == "$choice" ]]; then
+      echo "$answer"
+      return
+    fi
+  done
+
+  echo "install cancelled: expected one of: $*" >&2
+  print_docs_hint >&2
+  exit 1
+}
+
+require_install_consent() {
+  require_interactive_terminal
+
+  print_stage_heading "Stage 1: Install config files"
+
+  cat <<EOF
+icloud-sync installer
+
+The installation process assumes you have a symlink ~/icloud -> "$HOME/Library/Mobile Documents/com~apple~CloudDocs"
+
+Step 1 will create icloud-sync config files:
+  $CONFIG_FILE
+  $SYNC_PAIRS_FILE
+
+and then configure a demo example:
+  $SYNC_DEFAULT_DEMO_SOURCE/ -> $(destination_for_source "$SYNC_DEFAULT_DEMO_SOURCE")
+EOF
+
+  require_agree "Start install?"
+}
+
+require_demo_sync_consent() {
+  print_stage_heading "Stage 2: Run demo sync"
+
+  cat <<EOF
+icloud-sync will run one demo sync now.
+EOF
+
+  require_agree "Run sync now?"
+}
+
+require_automation_consent() {
+  print_stage_heading "Stage 3: Start automation and open dashboard"
+
+  cat <<EOF
+icloud-sync will install and start two macOS LaunchAgents:
+  $SYNC_LABEL
+  $HEALTH_LABEL
+
+The automation will sync every 10 minutes by default. See README.md for how to
+change timing and other parameters.
+
+macOS will require privacy approval before background rsync can read or write
+iCloud Drive. If the dashboard reports "Operation not permitted", grant Full
+Disk Access to the actual rsync binary:
+  1. Open System Settings > Privacy & Security > Full Disk Access.
+  2. Click +.
+  3. Press Cmd-Shift-G, paste /usr/bin/rsync, and choose Open.
+  4. Enable the rsync entry in the list.
+
+The installer will then launch the browser dashboard.
+EOF
+
+  require_agree "Would you like to start automation and open dashboard?"
+}
+
+print_install_summary() {
+  cat <<EOF
+
+Install finished.
+
+The demo source is:
+  $SYNC_DEFAULT_DEMO_SOURCE/
+
+The synced iCloud folder is:
+  $(destination_for_source "$SYNC_DEFAULT_DEMO_SOURCE")
+
+The dashboard should open automatically.
+
+To reopen the dashboard later:
+  "$RUNTIME_SCRIPTS_DIR/icloud-sync-gui"
+
+To inspect the synced demo folder:
+  open "$(destination_for_source "$SYNC_DEFAULT_DEMO_SOURCE")"
+
+To add real folders later, edit:
+  $SYNC_PAIRS_FILE
+
+$(print_docs_hint)
+EOF
+}
+
+install_config_file() {
+  local source="$1"
+  local target="$2"
+
+  mkdir -p "$(dirname "$target")"
+
+  if [[ -f "$target" ]]; then
+    echo "kept existing $target"
+    return
+  fi
+
+  cp "$source" "$target"
+  FIRST_INSTALL=true
+  echo "created $target"
+}
+
+configure_existing_sync_pairs() {
+  local answer
+
+  if [[ ! -f "$SYNC_PAIRS_FILE" ]]; then
+    install_config_file "$REPO_ROOT/config/sync-pairs.conf" "$SYNC_PAIRS_FILE"
+    return
+  fi
+
+  print_stage_heading "Existing sync-pairs config"
+
+  if has_sync_sources; then
+    cat <<EOF
+An existing sync source config was found:
+  $SYNC_PAIRS_FILE
+
+Keeping it preserves your configured local source folders for this reinstall.
+Resetting it replaces the file with the packaged default, then the installer
+will configure the demo source if no active source lines remain.
+EOF
+
+    answer="$(require_choice "Keep the existing sync-pairs config or reset it?" keep reset)"
+  else
+    cat <<EOF
+An existing sync source config was found, but it has no active source lines:
+  $SYNC_PAIRS_FILE
+
+This usually means the demo line was removed or every source was commented out.
+The installer needs at least one source before it can run the initial sync.
+Choose demo to initialize the default demo source, or reset to replace the file
+with the packaged default and then initialize the demo source if needed.
+EOF
+
+    answer="$(require_choice "Initialize demo source, reset the file, or cancel?" demo reset cancel)"
+  fi
+
+  case "$answer" in
+    keep)
+      echo "kept existing $SYNC_PAIRS_FILE"
+      ;;
+    demo)
+      echo "configured demo source"
+      write_default_demo_sync_pairs
+      ;;
+    reset)
+      cp "$REPO_ROOT/config/sync-pairs.conf" "$SYNC_PAIRS_FILE"
+      echo "reset $SYNC_PAIRS_FILE"
+      ;;
+    cancel)
+      echo "install cancelled: no active sync source was selected" >&2
+      print_docs_hint >&2
+      exit 1
+      ;;
+  esac
+}
+
+ensure_default_demo_source_if_configured() {
+  local source_dir
+  local demo_source
+
+  demo_source="$(normalize_dir "$SYNC_DEFAULT_DEMO_SOURCE")"
+  while IFS= read -r source_dir; do
+    if [[ "$source_dir" == "$demo_source" ]]; then
+      mkdir -p "$demo_source"
+      ensure_filter_file_for_source "$demo_source"
+      return
+    fi
+  done < <(iter_sync_sources)
+}
+
+install_runtime() {
+  mkdir -p "$RUNTIME_DIR"
+
+  if [[ "$REPO_ROOT" != "$RUNTIME_DIR" ]]; then
+    # This only refreshes icloud-sync's installed runtime copy, not user sync data.
+    rsync -a --delete \
+      --exclude '.git' \
+      --exclude '.DS_Store' \
+      "$REPO_ROOT/scripts/" "$RUNTIME_SCRIPTS_DIR/"
+    rsync -a --delete \
+      --exclude '.DS_Store' \
+      "$REPO_ROOT/config/" "$RUNTIME_CONFIG_DIR/"
+    rsync -a --delete \
+      --exclude '.DS_Store' \
+      "$REPO_ROOT/launchd/" "$RUNTIME_LAUNCHD_DIR/"
+  fi
+
+  cp "$REPO_ROOT/scripts/uninstall-icloud-sync" "$APP_SUPPORT_DIR/uninstall"
+  chmod 755 "$APP_SUPPORT_DIR/uninstall"
+
+  echo "installed runtime: $RUNTIME_DIR"
+  echo "installed uninstaller: $APP_SUPPORT_DIR/uninstall"
+}
+
+latest_sync_failure_detail() {
+  local sync_log="$SYNC_LOG_DIR/sync.log"
+
+  if [[ ! -f "$sync_log" ]]; then
+    return 0
+  fi
+
+  awk '
+    /^=+$/ && seen_block { exit }
+    /^=+$/ { seen_block = 1; next }
+    seen_block && /^(rsync\([0-9]+\): error:|cannot |result: failed)/ {
+      print
+      exit
+    }
+  ' "$sync_log"
+  return 0
+}
+
+print_full_disk_access_instructions() {
+  cat <<EOF
+
+Full Disk Access required.
+
+macOS denied background rsync access to iCloud Drive. To allow scheduled syncs:
+  1. Open System Settings > Privacy & Security > Full Disk Access.
+  2. Click +.
+  3. Press Cmd-Shift-G, paste /usr/bin/rsync, and choose Open.
+  4. Enable the rsync entry in the list.
+  5. Restart icloud-sync automation from the dashboard or run:
+     "$RUNTIME_SCRIPTS_DIR/start-automation"
+
+EOF
+}
+
+require_install_consent
+
+install_config_file "$REPO_ROOT/config/icloud-sync.conf" "$CONFIG_FILE"
+configure_existing_sync_pairs
+install_runtime
+
+if ! has_sync_sources; then
+  echo "configured demo source"
+  write_default_demo_sync_pairs
+fi
+
+ensure_default_demo_source_if_configured
+
+if ! has_sync_sources; then
+  echo "install cancelled: choose at least one local source folder before installing automation" >&2
+  print_docs_hint >&2
+  exit 1
+fi
+
+if ! require_min_free_space "$HOME" "$SYNC_MIN_FREE_LOCAL_MB" "local storage"; then
+  echo "install cancelled: local storage is below threshold" >&2
+  print_docs_hint >&2
+  exit 1
+fi
+
+if ! require_icloud_drive_symlink; then
+  echo "install cancelled: iCloud Drive symlink is not configured" >&2
+  print_docs_hint >&2
+  exit 1
+fi
+
+if ! require_min_free_space "$SYNC_ICLOUD_DRIVE_SYMLINK" "$SYNC_MIN_FREE_ICLOUD_MB" "iCloud target storage"; then
+  echo "install cancelled: iCloud target storage is below threshold" >&2
+  print_docs_hint >&2
+  exit 1
+fi
+
+require_demo_sync_consent
+"$RUNTIME_SCRIPTS_DIR/sync-to-icloud"
+
+install_agent() {
+  local label="$1"
+  local script_name="$2"
+  local wrapper_name="$3"
+  local template="$REPO_ROOT/launchd/$label.plist"
+  local target="$LAUNCH_AGENTS_DIR/$label.plist"
+  local domain="gui/$(id -u)"
+  local wrapper_path="$WRAPPER_BIN_DIR/$wrapper_name"
+  local script_path="$RUNTIME_SCRIPTS_DIR/$script_name"
+  local expected_program="$wrapper_path"
+  local legacy_expected_program="exec \"$REPO_ROOT/scripts/$script_name\""
+  local existing_program
+
+  mkdir -p "$LAUNCH_AGENTS_DIR"
+  mkdir -p "$WRAPPER_BIN_DIR"
+
+  if [[ -f "$target" ]]; then
+    existing_program="$(plutil -extract ProgramArguments.0 raw -o - "$target" 2>/dev/null || true)"
+    if [[ "$existing_program" == "/bin/zsh" ]]; then
+      existing_program="$(plutil -extract ProgramArguments.2 raw -o - "$target" 2>/dev/null || true)"
+    fi
+    if [[ -n "$existing_program" && "$existing_program" != "$expected_program" && "$existing_program" != "$legacy_expected_program" && "${ICLOUD_SYNC_REPLACE_EXISTING:-0}" != "1" ]]; then
+      echo "install cancelled: existing icloud-sync automation points somewhere unexpected" >&2
+      echo "Existing automation points to:" >&2
+      echo "  $existing_program" >&2
+      echo "Expected installed program is:" >&2
+      echo "  $expected_program" >&2
+      echo "To avoid taking over background sync unexpectedly, the installer stopped." >&2
+      echo "If you want this checkout to replace the existing automation, first uninstall the old one or run:" >&2
+      echo "  ICLOUD_SYNC_REPLACE_EXISTING=1 ./install" >&2
+      echo "After install, use repo-independent commands such as:" >&2
+      echo "  $(installed_command status-sync)" >&2
+      print_docs_hint >&2
+      exit 1
+    fi
+  fi
+
+  ln -sf /bin/zsh "$wrapper_path"
+
+  if launchctl print "$domain/$label" >/dev/null 2>&1; then
+    launchctl bootout "$domain/$label"
+  fi
+
+  sed \
+    -e "s#__PROGRAM_PATH__#$wrapper_path#g" \
+    -e "s#__SCRIPT_PATH__#$script_path#g" \
+    -e "s#<integer>600</integer>#<integer>$SYNC_INTERVAL_SECONDS</integer>#g" \
+    "$template" > "$target"
+  plutil -lint "$target" >/dev/null
+
+  launchctl bootstrap "$domain" "$target"
+  launchctl enable "$domain/$label"
+  launchctl kickstart -k "$domain/$label"
+
+  echo "installed $label"
+}
+
+require_automation_consent
+install_agent "$SYNC_LABEL" "sync-to-icloud" "iCloud Sync Agent"
+install_agent "$HEALTH_LABEL" "check-sync-health" "iCloud Sync Health"
+
+echo "validating background sync"
+launchctl kickstart -k "gui/$(id -u)/$SYNC_LABEL" || true
+sleep 2
+sync_exit_code="$(launchctl print "gui/$(id -u)/$SYNC_LABEL" 2>/dev/null | awk -F '= ' '/last exit code =/ { print $2; exit }')"
+sync_failure="$(latest_sync_failure_detail)"
+if [[ -n "$sync_exit_code" && "$sync_exit_code" != "0" ]]; then
+  echo "background sync validation failed: last exit code $sync_exit_code" >&2
+  if [[ -n "$sync_failure" ]]; then
+    echo "latest sync failure: $sync_failure" >&2
+  fi
+  if [[ "$sync_failure" == *"Operation not permitted"* ]]; then
+    open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" >/dev/null 2>&1 || true
+    print_full_disk_access_instructions >&2
+  fi
+fi
+
+echo "opening status dashboard"
+"$RUNTIME_SCRIPTS_DIR/icloud-sync-gui"
+
+print_install_summary

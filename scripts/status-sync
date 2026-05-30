@@ -1,0 +1,183 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib/icloud-sync-config"
+
+SYNC_LABEL="dev.icloud-sync"
+HEALTH_LABEL="dev.icloud-sync.health"
+DOMAIN="gui/$(id -u)"
+STATE_DIR="$SYNC_STATE_DIR"
+LOG_DIR="$SYNC_LOG_DIR"
+LAST_RUN_FILE="$STATE_DIR/sync.last-run"
+LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+APP_SUPPORT_DIR="$HOME/Library/Application Support/iCloud Sync"
+RUNTIME_SCRIPTS_DIR="$APP_SUPPORT_DIR/app/scripts"
+WRAPPER_BIN_DIR="$APP_SUPPORT_DIR/bin"
+
+agent_wrapper_name() {
+  case "$1" in
+    "$SYNC_LABEL") echo "iCloud Sync Agent" ;;
+    "$HEALTH_LABEL") echo "iCloud Sync Health" ;;
+  esac
+}
+
+agent_target_script_name() {
+  case "$1" in
+    "$SYNC_LABEL") echo "sync-to-icloud" ;;
+    "$HEALTH_LABEL") echo "check-sync-health" ;;
+  esac
+}
+
+agent_program() {
+  local label="$1"
+  local plist="$LAUNCH_AGENTS_DIR/$label.plist"
+  local program
+
+  [[ ! -f "$plist" ]] && return 1
+  program="$(plutil -extract ProgramArguments.0 raw -o - "$plist" 2>/dev/null || true)"
+  if [[ "$program" == "/bin/zsh" ]]; then
+    program="$(plutil -extract ProgramArguments.2 raw -o - "$plist" 2>/dev/null || true)"
+  fi
+  [[ -n "$program" ]] && echo "$program"
+}
+
+agent_script_path() {
+  local label="$1"
+  local plist="$LAUNCH_AGENTS_DIR/$label.plist"
+  local script_path
+
+  [[ ! -f "$plist" ]] && return 1
+  script_path="$(plutil -extract ProgramArguments.2 raw -o - "$plist" 2>/dev/null || true)"
+  [[ -n "$script_path" ]] && echo "$script_path"
+  return 0
+}
+
+agent_launchctl_output() {
+  local label="$1"
+
+  launchctl print "$DOMAIN/$label" 2>/dev/null || true
+}
+
+agent_last_exit_code() {
+  local label="$1"
+  local output
+  local exit_code
+
+  output="$(agent_launchctl_output "$label")"
+  exit_code="$(printf '%s\n' "$output" | awk -F '= ' '/last exit code =/ { print $2; exit }')"
+
+  [[ -n "$exit_code" ]] && echo "$exit_code"
+  return 0
+}
+
+expected_agent_program() {
+  local label="$1"
+  local wrapper_name
+
+  wrapper_name="$(agent_wrapper_name "$label")"
+  echo "$WRAPPER_BIN_DIR/$wrapper_name"
+}
+
+expected_agent_script() {
+  local label="$1"
+  local script_name
+
+  script_name="$(agent_target_script_name "$label")"
+  echo "$RUNTIME_SCRIPTS_DIR/$script_name"
+}
+
+agent_named_zsh_is_valid() {
+  local label="$1"
+  local wrapper_path
+
+  wrapper_path="$(expected_agent_program "$label")"
+  [[ -L "$wrapper_path" && "$(readlink "$wrapper_path")" == "/bin/zsh" ]]
+}
+
+print_agent_status() {
+  local label="$1"
+  local program
+  local expected
+  local script_path
+  local expected_script
+  local exit_code
+
+  if launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
+    echo "$label: loaded"
+    exit_code="$(agent_last_exit_code "$label")"
+    if [[ -n "$exit_code" ]]; then
+      echo "  last exit code: $exit_code"
+    fi
+  else
+    echo "$label: not loaded"
+  fi
+
+  if program="$(agent_program "$label")"; then
+    expected="$(expected_agent_program "$label")"
+    echo "  program: $program"
+    script_path="$(agent_script_path "$label" 2>/dev/null || true)"
+    expected_script="$(expected_agent_script "$label")"
+    if [[ -n "$script_path" ]]; then
+      echo "  script: $script_path"
+    fi
+    if [[ "$program" == "$expected" && "$script_path" == "$expected_script" ]] && agent_named_zsh_is_valid "$label"; then
+      echo "  matches installed runtime: yes"
+    else
+      echo "  matches installed runtime: no"
+      echo "  expected: $expected"
+      echo "  expected script: $expected_script"
+    fi
+  else
+    echo "  plist: missing"
+  fi
+}
+
+echo "config: $CONFIG_FILE"
+echo "sync pairs: $SYNC_PAIRS_FILE"
+echo "iCloud Drive symlink: $(normalize_dir "$SYNC_ICLOUD_DRIVE_SYMLINK")"
+echo "destination-only files: kept"
+echo "sync interval seconds: $SYNC_INTERVAL_SECONDS"
+echo "stale after seconds: $SYNC_STALE_AFTER_SECONDS"
+echo "filter file name: $SYNC_FILTER_FILE_NAME"
+echo "local free MB: $(free_mb_for_path "$HOME")"
+echo "required local free MB: $SYNC_MIN_FREE_LOCAL_MB"
+if require_icloud_drive_symlink >/dev/null 2>&1; then
+  echo "iCloud Drive symlink status: ok"
+  echo "iCloud target free MB: $(free_mb_for_path "$SYNC_ICLOUD_DRIVE_SYMLINK")"
+else
+  echo "iCloud Drive symlink status: missing"
+  echo "iCloud Drive symlink setup command: $(icloud_drive_symlink_command)"
+  echo "iCloud target free MB: unavailable"
+fi
+echo "required iCloud free MB: $SYNC_MIN_FREE_ICLOUD_MB"
+echo "sync log: $LOG_DIR/sync.log"
+echo "health log: $LOG_DIR/sync-health.log"
+echo "mappings:"
+
+has_mappings=false
+while IFS= read -r source_dir; do
+  has_mappings=true
+  if reject_source_path "$source_dir" >/dev/null 2>&1; then
+    echo "  $source_dir -> $(destination_for_source "$source_dir")"
+    echo "    filter: $(filter_file_for_source "$source_dir")"
+  else
+    echo "  rejected: $source_dir"
+  fi
+done < <(iter_sync_sources)
+
+if [[ "$has_mappings" == "false" ]]; then
+  echo "  none configured"
+fi
+
+if [[ -f "$LAST_RUN_FILE" ]]; then
+  echo "last successful sync: $(cat "$LAST_RUN_FILE")"
+else
+  echo "last successful sync: never"
+fi
+
+print_agent_status "$SYNC_LABEL"
+print_agent_status "$HEALTH_LABEL"

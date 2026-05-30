@@ -1,0 +1,244 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib/icloud-sync-config"
+
+LOG_DIR="$SYNC_LOG_DIR"
+LOG_FILE="$LOG_DIR/sync.log"
+STATE_DIR="$SYNC_STATE_DIR"
+LAST_RUN_FILE="$STATE_DIR/sync.last-run"
+LOCK_DIR="$SYNC_LOCK_DIR"
+MAX_LOG_BYTES="$SYNC_MAX_LOG_BYTES"
+MAX_ROTATED_LOGS="$SYNC_MAX_ROTATED_LOGS"
+MIN_BATTERY_PERCENT="${ICLOUD_SYNC_MIN_BATTERY_PERCENT:-$SYNC_MIN_BATTERY_PERCENT}"
+MAX_RUN_SECONDS="${ICLOUD_SYNC_MAX_RUN_SECONDS:-$SYNC_MAX_RUN_SECONDS}"
+
+mkdir -p "$LOG_DIR" "$STATE_DIR"
+
+log_size_bytes() {
+  wc -c < "$LOG_FILE" | tr -d '[:space:]'
+}
+
+rotate_log_if_needed() {
+  local index
+
+  if [[ ! -f "$LOG_FILE" ]]; then
+    return
+  fi
+
+  if (( $(log_size_bytes) <= MAX_LOG_BYTES )); then
+    return
+  fi
+
+  rm -f "$LOG_FILE.$MAX_ROTATED_LOGS"
+  for (( index = MAX_ROTATED_LOGS - 1; index >= 1; index-- )); do
+    if [[ -f "$LOG_FILE.$index" ]]; then
+      mv "$LOG_FILE.$index" "$LOG_FILE.$((index + 1))"
+    fi
+  done
+
+  mv "$LOG_FILE" "$LOG_FILE.1"
+}
+
+prepend_log_block() {
+  local block_file="$1"
+  local new_log
+
+  rotate_log_if_needed
+
+  new_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-log.XXXXXX")"
+
+  cat "$block_file" > "$new_log"
+  if [[ -s "$LOG_FILE" ]]; then
+    printf '\n' >> "$new_log"
+    cat "$LOG_FILE" >> "$new_log"
+  fi
+
+  mv "$new_log" "$LOG_FILE"
+}
+
+power_source() {
+  pmset -g batt | sed -n "s/^Now drawing from '\\(.*\\)'/\\1/p"
+}
+
+battery_percent() {
+  pmset -g batt | awk -F '\t' '/InternalBattery/ { split($2, fields, ";"); gsub(/[^0-9]/, "", fields[1]); print fields[1]; exit }'
+}
+
+if is_true "$SYNC_SKIP_ON_LOW_BATTERY" && [[ "$(power_source)" == "Battery Power" ]]; then
+  current_battery_percent="$(battery_percent)"
+  if [[ -n "$current_battery_percent" ]] && (( current_battery_percent < MIN_BATTERY_PERCENT )); then
+    battery_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
+    {
+      echo "================================================================================"
+      echo "run: skipped"
+      echo "time: $(date -Iseconds)"
+      echo "reason: battery below threshold"
+      echo "battery: ${current_battery_percent}%"
+      echo "threshold: ${MIN_BATTERY_PERCENT}%"
+      echo "================================================================================"
+    } > "$battery_log"
+    prepend_log_block "$battery_log"
+    rm -f "$battery_log"
+    refresh_status_dashboard
+    exit 0
+  fi
+fi
+
+if ! require_min_free_space "$HOME" "$SYNC_MIN_FREE_LOCAL_MB" "local storage"; then
+  storage_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
+  {
+    echo "================================================================================"
+    echo "run: skipped"
+    echo "time: $(date -Iseconds)"
+    echo "reason: local storage below threshold"
+    echo "threshold_mb: $SYNC_MIN_FREE_LOCAL_MB"
+    echo "================================================================================"
+  } > "$storage_log"
+  prepend_log_block "$storage_log"
+  rm -f "$storage_log"
+  refresh_status_dashboard
+  exit 0
+fi
+
+if ! require_icloud_drive_symlink >/dev/null 2>&1; then
+  storage_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
+  {
+    echo "================================================================================"
+    echo "run: skipped"
+    echo "time: $(date -Iseconds)"
+    echo "reason: iCloud Drive symlink is not configured"
+    echo "icloud_drive_symlink: $(icloud_drive_symlink_path)"
+    echo "setup_command: $(icloud_drive_symlink_command)"
+    echo "================================================================================"
+  } > "$storage_log"
+  prepend_log_block "$storage_log"
+  rm -f "$storage_log"
+  refresh_status_dashboard
+  exit 0
+fi
+
+if ! require_min_free_space "$SYNC_ICLOUD_DRIVE_SYMLINK" "$SYNC_MIN_FREE_ICLOUD_MB" "iCloud target storage"; then
+  storage_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
+  {
+    echo "================================================================================"
+    echo "run: skipped"
+    echo "time: $(date -Iseconds)"
+    echo "reason: iCloud target storage below threshold"
+    echo "threshold_mb: $SYNC_MIN_FREE_ICLOUD_MB"
+    echo "================================================================================"
+  } > "$storage_log"
+  prepend_log_block "$storage_log"
+  rm -f "$storage_log"
+  refresh_status_dashboard
+  exit 0
+fi
+
+if ! has_sync_sources; then
+  no_sources_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
+  {
+    echo "================================================================================"
+    echo "run: skipped"
+    echo "time: $(date -Iseconds)"
+    echo "reason: no sync sources configured"
+    echo "sync_pairs: $SYNC_PAIRS_FILE"
+    echo "================================================================================"
+  } > "$no_sources_log"
+  prepend_log_block "$no_sources_log"
+  rm -f "$no_sources_log"
+  refresh_status_dashboard
+  exit 0
+fi
+
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  lock_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
+  {
+    echo "================================================================================"
+    echo "run: skipped"
+    echo "time: $(date -Iseconds)"
+    echo "reason: previous sync still running"
+    echo "lock: $LOCK_DIR"
+    echo "================================================================================"
+  } > "$lock_log"
+  prepend_log_block "$lock_log"
+  rm -f "$lock_log"
+  refresh_status_dashboard
+  exit 0
+fi
+
+cleanup() {
+  rmdir "$LOCK_DIR"
+}
+trap cleanup EXIT
+
+run_log="$(mktemp "${TMPDIR:-/tmp}/icloud-sync-run.XXXXXX")"
+run_started_epoch="$(date +%s)"
+
+set +e
+{
+  echo "================================================================================"
+  echo "run: sync"
+  echo "started: $(date -Iseconds)"
+  echo "config: $CONFIG_FILE"
+  echo "sync_pairs: $SYNC_PAIRS_FILE"
+  echo "destination_only_files: kept"
+  echo "lock: $LOCK_DIR"
+  echo "--------------------------------------------------------------------------------"
+  rsync_status=0
+  while IFS= read -r source_dir; do
+    reject_source_path "$source_dir" || {
+      rsync_status=2
+      continue
+    }
+
+    destination_dir="$(destination_for_source "$source_dir")"
+    mkdir -p "$destination_dir"
+    ensure_filter_file_for_source "$source_dir" || {
+      rsync_status=2
+      continue
+    }
+    filter_file="$(filter_file_for_source "$source_dir")"
+
+    echo "source: $source_dir"
+    echo "destination: $destination_dir"
+    echo "filter_file: $filter_file"
+
+    rsync_args=(-a -v)
+    rsync_args+=(--filter="merge $filter_file")
+
+    rsync "${rsync_args[@]}" "$source_dir" "$destination_dir"
+    pair_status=$?
+    if (( pair_status != 0 )); then
+      rsync_status="$pair_status"
+    fi
+    echo "--------------------------------------------------------------------------------"
+  done < <(iter_sync_sources)
+  iter_status=$?
+  if (( iter_status != 0 )); then
+    rsync_status="$iter_status"
+  fi
+  echo "finished: $(date -Iseconds)"
+  run_duration_seconds=$(( $(date +%s) - run_started_epoch ))
+  echo "duration_seconds: $run_duration_seconds"
+  if (( rsync_status == 0 && run_duration_seconds > MAX_RUN_SECONDS )); then
+    echo "cost_warning: duration exceeded ${MAX_RUN_SECONDS}s threshold"
+  fi
+  echo "result: $([[ "$rsync_status" -eq 0 ]] && echo success || echo "failed with exit code $rsync_status")"
+  echo "================================================================================"
+} > "$run_log" 2>&1
+set -e
+
+prepend_log_block "$run_log"
+rm -f "$run_log"
+
+if (( rsync_status == 0 )); then
+  date -Iseconds > "$LAST_RUN_FILE"
+fi
+
+refresh_status_dashboard
+
+exit "$rsync_status"

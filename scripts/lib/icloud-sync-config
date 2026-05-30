@@ -1,0 +1,215 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+CONFIG_DIR="${ICLOUD_SYNC_CONFIG_DIR:-$HOME/.config/icloud-sync}"
+CONFIG_FILE="${ICLOUD_SYNC_CONFIG_FILE:-$CONFIG_DIR/icloud-sync.conf}"
+SYNC_PAIRS_FILE="${ICLOUD_SYNC_PAIRS_FILE:-$CONFIG_DIR/sync-pairs.conf}"
+
+SYNC_ICLOUD_DRIVE_SYMLINK="$HOME/icloud"
+SYNC_ICLOUD_ROOT=""
+SYNC_INTERVAL_SECONDS=600
+SYNC_STALE_AFTER_SECONDS=7200
+SYNC_SKIP_ON_LOW_BATTERY=true
+SYNC_MIN_BATTERY_PERCENT=30
+SYNC_MAX_RUN_SECONDS=60
+SYNC_MIN_FREE_LOCAL_MB=2048
+SYNC_MIN_FREE_ICLOUD_MB=2048
+SYNC_LOG_DIR="$HOME/.local/share/icloud-sync/logs"
+SYNC_STATE_DIR="$HOME/.local/share/icloud-sync/state"
+SYNC_MAX_LOG_BYTES=1048576
+SYNC_MAX_ROTATED_LOGS=3
+SYNC_LOCK_DIR="/tmp/icloud-sync.lock"
+SYNC_FILTER_FILE_NAME=".icloud-sync-filter"
+SYNC_DEFAULT_DEMO_SOURCE="$HOME/projects/icloud-sync-demo"
+
+if [[ -f "$CONFIG_FILE" ]]; then
+  source "$CONFIG_FILE"
+fi
+
+if [[ -n "$SYNC_ICLOUD_ROOT" ]]; then
+  SYNC_ICLOUD_DRIVE_SYMLINK="$SYNC_ICLOUD_ROOT"
+fi
+
+expand_path() {
+  local value="$1"
+
+  if [[ "$value" == "~" ]]; then
+    echo "$HOME"
+  elif [[ "$value" == "~/"* ]]; then
+    echo "$HOME/${value#\~/}"
+  else
+    echo "$value"
+  fi
+}
+
+normalize_dir() {
+  local value
+  value="$(expand_path "$1")"
+  value="${value%/}"
+  echo "$value/"
+}
+
+is_true() {
+  case "$1" in
+    true|TRUE|yes|YES|1) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+free_mb_for_path() {
+  local target_path="$1"
+  local probe="$target_path"
+
+  while [[ ! -e "$probe" && "$probe" != "/" ]]; do
+    probe="$(dirname "$probe")"
+  done
+
+  df -Pm "$probe" | awk 'NR == 2 { print $4 }'
+}
+
+require_min_free_space() {
+  local target_path="$1"
+  local required_mb="$2"
+  local label="$3"
+  local available_mb
+
+  available_mb="$(free_mb_for_path "$target_path")"
+  if (( available_mb < required_mb )); then
+    echo "$label has ${available_mb} MB free, below required ${required_mb} MB" >&2
+    return 1
+  fi
+}
+
+icloud_drive_symlink_path() {
+  normalize_dir "$SYNC_ICLOUD_DRIVE_SYMLINK"
+}
+
+icloud_drive_symlink_command() {
+  echo "ln -s \"$HOME/Library/Mobile Documents/com~apple~CloudDocs\" \"$HOME/icloud\""
+}
+
+require_icloud_drive_symlink() {
+  local symlink_path
+  symlink_path="$(icloud_drive_symlink_path)"
+
+  if [[ ! -d "$symlink_path" ]]; then
+    echo "iCloud Drive symlink does not exist: $symlink_path" >&2
+    echo "Create the default symlink with:" >&2
+    echo "  $(icloud_drive_symlink_command)" >&2
+    return 1
+  fi
+}
+
+reject_source_path() {
+  local source="$1"
+
+  if [[ "$source" != "$HOME/"* ]]; then
+    echo "rejecting source outside HOME: $source" >&2
+    return 1
+  fi
+}
+
+destination_for_source() {
+  local source="$1"
+  local relative
+
+  source="$(normalize_dir "$source")"
+  relative="${source#$HOME/}"
+  normalize_dir "$(normalize_dir "$SYNC_ICLOUD_DRIVE_SYMLINK")$relative"
+}
+
+filter_file_for_source() {
+  local source="$1"
+  printf '%s%s\n' "$(normalize_dir "$source")" "$SYNC_FILTER_FILE_NAME"
+}
+
+ensure_filter_file_for_source() {
+  local source="$1"
+  local filter_file
+
+  source="$(normalize_dir "$source")"
+  filter_file="$(filter_file_for_source "$source")"
+
+  if [[ -f "$filter_file" ]]; then
+    return
+  fi
+
+  if [[ ! -d "$source" ]]; then
+    echo "cannot create filter file because source does not exist: $source" >&2
+    return 1
+  fi
+
+  cat > "$filter_file" <<EOF
+# icloud-sync rsync filter rules for this source folder.
+#
+# Default behavior is to sync everything in this directory, including an entire
+# Git repository if this folder is a repo or contains repos.
+#
+# Add rsync include/exclude filter rules below to change behavior. Examples:
+# - .git/
+# - node_modules/
+# - *.tmp
+# + important-output/
+# - scratch/
+#
+# Rule syntax follows rsync filter files. Lines beginning with # are comments.
+EOF
+}
+
+iter_sync_sources() {
+  local line
+
+  [[ ! -f "$SYNC_PAIRS_FILE" ]] && return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" ]] && continue
+    normalize_dir "$line"
+  done < "$SYNC_PAIRS_FILE"
+}
+
+has_sync_sources() {
+  local source_dir
+
+  while IFS= read -r source_dir; do
+    return 0
+  done < <(iter_sync_sources)
+
+  return 1
+}
+
+refresh_status_dashboard() {
+  local dashboard_script="${SCRIPT_DIR:-}/icloud-sync-gui"
+
+  if [[ ! -x "$dashboard_script" ]]; then
+    return
+  fi
+
+  ICLOUD_SYNC_GUI_OPEN=0 "$dashboard_script" >/dev/null 2>&1 || {
+    echo "warning: failed to refresh status dashboard: $dashboard_script" >&2
+  }
+}
+
+write_default_demo_sync_pairs() {
+  local demo_source
+
+  demo_source="$(normalize_dir "$SYNC_DEFAULT_DEMO_SOURCE")"
+  mkdir -p "$demo_source"
+  ensure_filter_file_for_source "$demo_source"
+  mkdir -p "$(dirname "$SYNC_PAIRS_FILE")"
+
+  {
+    echo "# One local source folder per line."
+    echo "# Destination is computed as:"
+    echo "#   \$SYNC_ICLOUD_DRIVE_SYMLINK/<path relative to \$HOME>"
+    echo "#"
+    echo "# Default demo source configured on $(date -Iseconds)."
+    echo "# Add real project folders only after reviewing their .icloud-sync-filter files."
+    echo "~/projects/icloud-sync-demo/"
+  } > "$SYNC_PAIRS_FILE"
+}

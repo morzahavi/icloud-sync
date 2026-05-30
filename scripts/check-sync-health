@@ -1,0 +1,74 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib/icloud-sync-config"
+
+STATE_DIR="$SYNC_STATE_DIR"
+LOG_DIR="$SYNC_LOG_DIR"
+LAST_RUN_FILE="$STATE_DIR/sync.last-run"
+HEALTH_LOG="$LOG_DIR/sync-health.log"
+MAX_AGE_SECONDS="$SYNC_STALE_AFTER_SECONDS"
+MAX_LOG_BYTES="$SYNC_MAX_LOG_BYTES"
+MAX_ROTATED_LOGS="$SYNC_MAX_ROTATED_LOGS"
+
+mkdir -p "$STATE_DIR" "$LOG_DIR"
+
+log_size_bytes() {
+  wc -c < "$HEALTH_LOG" | tr -d '[:space:]'
+}
+
+rotate_health_log_if_needed() {
+  local index
+
+  if [[ ! -f "$HEALTH_LOG" ]]; then
+    return
+  fi
+
+  if (( $(log_size_bytes) <= MAX_LOG_BYTES )); then
+    return
+  fi
+
+  rm -f "$HEALTH_LOG.$MAX_ROTATED_LOGS"
+  for (( index = MAX_ROTATED_LOGS - 1; index >= 1; index-- )); do
+    if [[ -f "$HEALTH_LOG.$index" ]]; then
+      mv "$HEALTH_LOG.$index" "$HEALTH_LOG.$((index + 1))"
+    fi
+  done
+
+  mv "$HEALTH_LOG" "$HEALTH_LOG.1"
+}
+
+log_health() {
+  rotate_health_log_if_needed
+  echo "$(date -Iseconds) $1" >> "$HEALTH_LOG"
+  refresh_status_dashboard
+}
+
+file_age_seconds() {
+  local file_path="$1"
+  echo $(( $(date +%s) - $(stat -f %m "$file_path") ))
+}
+
+if ! has_sync_sources; then
+  log_health "skipped: no sync sources configured"
+  exit 0
+fi
+
+if [[ ! -f "$LAST_RUN_FILE" ]]; then
+  log_health "status=error reason=missing-successful-sync-stamp action=run \"$SCRIPT_DIR/sync-to-icloud\" or inspect sync.log"
+  exit 1
+fi
+
+last_run_age="$(file_age_seconds "$LAST_RUN_FILE")"
+
+if (( last_run_age > MAX_AGE_SECONDS )); then
+  last_run_minutes=$((last_run_age / 60))
+  log_health "status=error reason=stale-successful-sync-stamp age_seconds=$last_run_age age_minutes=$last_run_minutes threshold_seconds=$MAX_AGE_SECONDS action=inspect sync.log"
+  exit 1
+fi
+
+log_health "status=ok last_success_age_seconds=$last_run_age threshold_seconds=$MAX_AGE_SECONDS"

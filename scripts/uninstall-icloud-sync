@@ -1,0 +1,52 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+APP_SUPPORT_DIR="$HOME/Library/Application Support/iCloud Sync"
+RUNTIME_DIR="$APP_SUPPORT_DIR/app"
+WRAPPER_BIN_DIR="$APP_SUPPORT_DIR/bin"
+INSTALLED_UNINSTALLER="$APP_SUPPORT_DIR/uninstall"
+CONFIG_DIR="${ICLOUD_SYNC_CONFIG_DIR:-$HOME/.config/icloud-sync}"
+DOMAIN="gui/$(id -u)"
+
+LABELS=(
+  dev.icloud-sync
+  dev.icloud-sync.health
+)
+WRAPPERS=(
+  "iCloud Sync Agent"
+  "iCloud Sync Health"
+)
+
+for label in "${LABELS[@]}"; do
+  if launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
+    launchctl bootout "$DOMAIN/$label"
+  fi
+
+  rm -f "$LAUNCH_AGENTS_DIR/$label.plist"
+  echo "uninstalled $label"
+done
+
+for wrapper in "${WRAPPERS[@]}"; do
+  rm -f "$WRAPPER_BIN_DIR/$wrapper"
+done
+
+rm -rf "$RUNTIME_DIR"
+rm -f "$INSTALLED_UNINSTALLER"
+rmdir "$WRAPPER_BIN_DIR" "$APP_SUPPORT_DIR" 2>/dev/null || true
+
+rm -rf "$HOME/.local/share/icloud-sync"
+rm -rf "$HOME/projects/icloud-sync-demo"
+rm -rf "$HOME/icloud/projects/icloud-sync-demo"
+
+if [[ "${ICLOUD_SYNC_PURGE_CONFIG:-0}" == "1" ]]; then
+  rm -rf "$CONFIG_DIR"
+  echo "removed icloud-sync config, logs, state, and default demo folders"
+else
+  echo "kept icloud-sync config: $CONFIG_DIR"
+  echo "removed icloud-sync logs, state, and default demo folders"
+fi
+echo "real source folders and iCloud mirrors added manually were not removed"

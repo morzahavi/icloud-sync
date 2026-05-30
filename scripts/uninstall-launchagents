@@ -1,0 +1,35 @@
+#!/bin/zsh
+
+set -e
+set -u
+set -o pipefail
+
+LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+APP_SUPPORT_DIR="$HOME/Library/Application Support/iCloud Sync"
+WRAPPER_BIN_DIR="$APP_SUPPORT_DIR/bin"
+LABELS=(
+  dev.icloud-sync
+  dev.icloud-sync.health
+)
+WRAPPERS=(
+  "iCloud Sync Agent"
+  "iCloud Sync Health"
+)
+DOMAIN="gui/$(id -u)"
+
+for label in "${LABELS[@]}"; do
+  if launchctl print "$DOMAIN/$label" >/dev/null 2>&1; then
+    launchctl bootout "$DOMAIN/$label"
+  fi
+
+  rm -f "$LAUNCH_AGENTS_DIR/$label.plist"
+  echo "uninstalled $label"
+done
+
+for wrapper in "${WRAPPERS[@]}"; do
+  rm -f "$WRAPPER_BIN_DIR/$wrapper"
+done
+
+rmdir "$WRAPPER_BIN_DIR" 2>/dev/null || true
+
+echo "kept installed runtime: $APP_SUPPORT_DIR/app"
