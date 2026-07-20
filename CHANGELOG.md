@@ -10,10 +10,13 @@ This project uses semantic versioning where practical.
 
 - GNU GPLv3-or-later license.
 - Public release changelog.
+- Focused operations and troubleshooting guides.
 - Reinstall prompt for keeping, resetting, or demo-initializing an existing `sync-pairs.conf`.
 
 ### Changed
 
+- Shortened README onboarding with clearer daily commands, first-run consent,
+  uninstall boundaries, and source-path validation limitations.
 - Full uninstall now preserves `$HOME/.config/icloud-sync/` by default so source pairs survive reinstall; set `ICLOUD_SYNC_PURGE_CONFIG=1` to remove config too.
 - LaunchAgent-only uninstall now keeps the installed runtime so automation can be reinstalled after the cloned repo is deleted.
 - Post-install docs and status messages now point users to the installed runtime commands under `$HOME/Library/Application Support/iCloud Sync/app/scripts/`.
