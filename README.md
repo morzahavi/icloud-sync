@@ -132,6 +132,7 @@ If the clone is gone, use the installed full uninstaller:
   reinstall, and exact uninstall behaviour.
 - [Troubleshooting](docs/troubleshooting.md): permissions, paths, agents,
   dashboard refresh, and skipped or failed runs.
+- [Roadmap](ROADMAP.md): nonbinding candidates for future feature branches.
 
 ## Maintenance and License
 

@@ -11,6 +11,7 @@ This project uses semantic versioning where practical.
 - GNU GPLv3-or-later license.
 - Public release changelog.
 - Focused operations and troubleshooting guides.
+- Concise public roadmap of nonbinding future product candidates.
 - Reinstall prompt for keeping, resetting, or demo-initializing an existing `sync-pairs.conf`.
 
 ### Changed
