@@ -103,6 +103,64 @@ the iCloud path is unavailable, or battery or storage checks fail. A successful
 run updates `sync.last-run`. A successful run longer than
 `SYNC_MAX_RUN_SECONDS` records a `cost_warning` but still succeeds.
 
+## Previewing Changes
+
+Use the updated installed runtime to preview a sync:
+
+```zsh
+"$HOME/Library/Application Support/iCloud Sync/app/scripts/sync-to-icloud" --dry-run
+```
+
+For development, `./scripts/sync-to-icloud --dry-run` runs the clone's version
+with the same configured sources. Installed commands use a separate runtime
+copy: update that copy through the installer before relying on preview support.
+Older versions ignore arguments, including `--dry-run`, and perform a real sync.
+
+Preview uses the normal source mappings, archive options, and existing filter
+rules, adding rsync's `--dry-run`, `--itemize-changes`, and `--stats` options.
+Its clearly labelled output goes to the terminal. Destination-only files remain
+untouched and are not proposed for deletion. Statistics describe the local copy
+operation, not confirmation of upload to Apple's servers.
+
+Preview does not create or update source or destination files/directories,
+filters, logs, last-success state, or the dashboard. If a source has no filter,
+it reports that fact and previews all existing contents, matching the default
+include-all rules. A normal sync would additionally create and copy the default
+filter file itself; preview reports this but does not materialize that file.
+A filter path that exists but is not a regular file is an error.
+
+The configured iCloud root must exist. Battery and free-space thresholds for
+real copying do not block preview. The normal shared lock is held temporarily
+and removed on completion, failure, or a handled HUP, INT, or TERM signal. A
+coincident scheduled sync may skip while preview holds the lock. SIGKILL cannot
+be handled and may leave a lock, as with a real sync.
+
+Exit status is zero only when all configured sources have been previewed
+successfully. An unavailable lock returns 1. Missing/invalid sources, an
+unavailable iCloud root, an empty source list, and invalid options return 2.
+Rsync failures return a nonzero rsync exit code. Remaining sources are still
+inspected after a source failure, and the final result labels that output as
+partial. A preview is a view of current files, not a reservation of the changes;
+files or filters may change before a later real sync. The source-path validation
+limitations documented above also apply to preview.
+
+`sync-to-icloud --help` prints usage without loading configuration or creating
+files. Unsupported options and extra arguments fail before configuration is
+loaded. No-argument execution retains normal sync behaviour, including its
+logging, safety checks, filter creation, and successful-run state updates.
+
+The isolated integration suite uses temporary source, destination, config, and
+state directories and a stub dashboard. Run it from the clone with:
+
+```zsh
+PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/zsh tests/test-sync-to-icloud.zsh
+/bin/zsh tests/test-sync-to-icloud.zsh
+```
+
+The first command checks the system rsync; the second checks the rsync found
+through the current environment. The tests do not use the installed runtime,
+real iCloud folders, or real user LaunchAgents.
+
 ## Status, Dashboard, and Logs
 
 `status-sync` reports config paths, source mappings, destination-only retention,

@@ -33,5 +33,3 @@ Candidates within each priority are listed in the order they could be considered
 
 - Evaluate a source audit that would identify Git repositories, large folders,
   missing filters, and common generated directories before syncing.
-- Explore a dry-run preview that would summarize proposed rsync changes without
-  writing to iCloud Drive.

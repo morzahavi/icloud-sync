@@ -4,8 +4,103 @@ set -e
 set -u
 set -o pipefail
 
+usage() {
+  echo 'Usage: sync-to-icloud [--dry-run | --help]'
+  echo '  --dry-run  Preview rsync changes without updating files, logs, or state.'
+  echo '  --help     Show this help without loading configuration.'
+  echo '  No options runs the normal sync.'
+}
+
+sync_mode=sync
+if (( $# > 0 )); then
+  if (( $# != 1 )); then
+    usage >&2
+    exit 2
+  fi
+  case "$1" in
+    --dry-run) sync_mode=preview ;;
+    --help) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+  esac
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/icloud-sync-config"
+
+build_rsync_args() {
+  local filter_path="$1"
+
+  rsync_args=(-a -v)
+  if [[ -n "$filter_path" ]]; then
+    rsync_args+=(--filter="merge $filter_path")
+  fi
+}
+
+if [[ "$sync_mode" == preview ]]; then
+  require_icloud_drive_symlink || exit 2
+  preview_sources="$(iter_sync_sources)" || exit 2
+  if [[ -z "$preview_sources" ]]; then
+    echo 'cannot preview: no sync sources configured' >&2
+    exit 2
+  fi
+
+  if ! mkdir "$SYNC_LOCK_DIR" 2>/dev/null; then
+    echo "cannot preview: sync lock unavailable: $SYNC_LOCK_DIR" >&2
+    exit 1
+  fi
+  trap 'rmdir "$SYNC_LOCK_DIR"' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  echo 'run: dry-run (preview only; no files, logs, or sync state will be updated)'
+  echo 'destination_only_files: kept'
+  preview_status=0
+  for source_dir in "${(@f)preview_sources}"; do
+    if ! reject_source_path "$source_dir"; then
+      preview_status=2
+      continue
+    fi
+    if [[ ! -d "$source_dir" ]]; then
+      echo "cannot preview missing source: $source_dir" >&2
+      preview_status=2
+      continue
+    fi
+
+    destination_dir="$(destination_for_source "$source_dir")"
+    filter_file="$(filter_file_for_source "$source_dir")"
+    echo '--------------------------------------------------------------------------------'
+    echo "source: $source_dir"
+    echo "destination: $destination_dir"
+    echo "filter_file: $filter_file"
+
+    if [[ -f "$filter_file" ]]; then
+      build_rsync_args "$filter_file"
+    elif [[ -e "$filter_file" || -L "$filter_file" ]]; then
+      echo "cannot preview: filter is not a regular file: $filter_file" >&2
+      preview_status=2
+      continue
+    else
+      echo 'filter: missing; preview includes everything, matching the default filter rules.'
+      echo 'Normal sync will also create and copy the default filter file; preview does not create it.'
+      build_rsync_args ""
+    fi
+    rsync_args+=(--dry-run --itemize-changes --stats)
+
+    if rsync "${rsync_args[@]}" "$source_dir" "$destination_dir"; then
+      :
+    else
+      preview_status=$?
+    fi
+  done
+  echo '--------------------------------------------------------------------------------'
+  if (( preview_status == 0 )); then
+    echo 'result: preview complete'
+  else
+    echo "result: preview failed with exit code $preview_status (output may be partial)"
+  fi
+  exit "$preview_status"
+fi
 
 LOG_DIR="$SYNC_LOG_DIR"
 LOG_FILE="$LOG_DIR/sync.log"
@@ -207,8 +302,7 @@ set +e
     echo "destination: $destination_dir"
     echo "filter_file: $filter_file"
 
-    rsync_args=(-a -v)
-    rsync_args+=(--filter="merge $filter_file")
+    build_rsync_args "$filter_file"
 
     rsync "${rsync_args[@]}" "$source_dir" "$destination_dir"
     pair_status=$?

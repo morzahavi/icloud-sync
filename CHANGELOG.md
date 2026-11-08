@@ -8,6 +8,12 @@ This project uses semantic versioning where practical.
 
 ### Added
 
+- True `sync-to-icloud --dry-run` preview with itemized rsync changes and
+  statistics, existing-filter support, and no persistent file/log/state updates.
+- Side-effect-free `--help` and rejection of unsupported or extra arguments
+  before configuration is loaded.
+- Isolated integration coverage for previews, failure and lock handling, and
+  normal sync compatibility with system and ambient rsync.
 - GNU GPLv3-or-later license.
 - Public release changelog.
 - Focused operations and troubleshooting guides.

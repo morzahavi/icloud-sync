@@ -59,6 +59,7 @@ RUNTIME_SCRIPTS_DIR="$HOME/Library/Application Support/iCloud Sync/app/scripts"
 
 | Action | Command |
 | --- | --- |
+| Preview changes | `"$RUNTIME_SCRIPTS_DIR/sync-to-icloud" --dry-run` |
 | Sync now | `"$RUNTIME_SCRIPTS_DIR/sync-to-icloud"` |
 | Show status | `"$RUNTIME_SCRIPTS_DIR/status-sync"` |
 | Configure sources | `"$RUNTIME_SCRIPTS_DIR/configure-sync-sources"` |
@@ -72,6 +73,16 @@ Pause unloads both LaunchAgents but keeps their plist files, config, logs, and
 state. Resume loads the existing plist files and immediately kickstarts both
 agents. Installed runtime commands keep working if the cloned repository is
 later deleted.
+
+The preview shows rsync's proposed changes and statistics without updating
+source files, iCloud files, filters, logs, or sync state. It briefly holds the
+normal sync lock. Run `sync-to-icloud --help` for supported options; unknown
+options fail rather than starting a real sync.
+
+When upgrading, the installed runtime must also be updated before using
+`--dry-run`. Older versions ignore options and perform a real sync. Updating
+the clone alone does not update the installed runtime; rerun `./install` and
+review its consent stages, including the immediate real-sync stage.
 
 ## Source Folders
 
